@@ -2,28 +2,29 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
+from rest_framework_simplejwt.views import TokenRefreshView # <-- Import this
 
-# --- IMPORT THE NEW JWT VIEWS ---
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-    TokenVerifyView,
-)
-
-# --- Router (no change) ---
+# --- 1. Create the router ---
 router = DefaultRouter()
-router.register(r'auth-users', views.UserViewSet, basename='auth-user')
-router.register(r'profiles', views.ProfileViewSet, basename='profile')
+
+# --- 2. Register all our ViewSets ---
+router.register(r'teachers', views.TeacherViewSet, basename='teacher')
+router.register(r'classes', views.ClassesViewSet, basename='class')
+router.register(r'sections', views.SectionViewSet, basename='section')
+router.register(r'subjects', views.SubjectViewSet, basename='subject')
+router.register(r'students', views.StudentViewSet, basename='student')
+# --- Add the 3 MISSING routes ---
+router.register(r'parents', views.ParentsViewSet, basename='parent')
+router.register(r'systemadmins', views.SystemadminViewSet, basename='systemadmin')
+router.register(r'users', views.UserViewSet, basename='user')
+
 
 urlpatterns = [
-
-    path('register/', views.RegisterAPIView.as_view(), name='register'),
-    path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('login/', views.CustomLoginView.as_view(), name='custom_login'),
+    
+    # Add the refresh token URL
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
-   
-    path('token/verify/', TokenVerifyView.as_view(), name='token_verify'),
-
-    # Includes all URLs from the router (no change)
+    # Include all the router URLs
     path('', include(router.urls)),
 ]

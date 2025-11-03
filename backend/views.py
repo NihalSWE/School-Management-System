@@ -1,49 +1,111 @@
 # In backend/views.py
 from django.http import JsonResponse
-from .models import Users as Profile
-from .models import Designations
-from django.contrib.auth.models import User
-from django.db import transaction
+from .models import * 
+from django.contrib.auth.hashers import check_password
 
 # DRF Imports
 from rest_framework import viewsets, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.permissions import AllowAny # <-- We still need this for CustomLoginView
+
+# --- 1. IMPORT OUR TOKEN GENERATOR ---
+from .jwt_utils import get_tokens_for_user 
 
 # Serializer Imports
-from .serializers import AuthUserSerializer, ProfileSerializer
+from .serializers import (
+    TeacherSerializer, ClassesSerializer, SectionSerializer, 
+    SubjectSerializer, StudentSerializer, ParentsSerializer,
+    SystemadminSerializer, UserSerializer
+)
+
+# --- 2. CUSTOM LOGIN VIEW (This is the only public view) ---
+class CustomLoginView(APIView):
+    permission_classes = [AllowAny] # This endpoint is public
+
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        if not username or not password:
+            return Response({'error': 'Username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = None
+        
+        # ... (all your "Try" blocks for login are correct, no change) ...
+        # Try Teacher table
+        try:
+            u = Teacher.objects.get(username=username)
+            if check_password(password, u.password): user = u
+        except Teacher.DoesNotExist: pass
+
+        # Try Student table
+        if not user:
+            try:
+                u = Student.objects.get(username=username)
+                if check_password(password, u.password): user = u
+            except Student.DoesNotExist: pass
+
+        # Try Parents table
+        if not user:
+            try:
+                u = Parents.objects.get(username=username)
+                if check_password(password, u.password): user = u
+            except Parents.DoesNotExist: pass
+        
+        # Try Systemadmin table
+        if not user:
+            try:
+                u = Systemadmin.objects.get(username=username)
+                if check_password(password, u.password): user = u
+            except Systemadmin.DoesNotExist: pass
+
+        # Try User table (for other staff)
+        if not user:
+            try:
+                u = User.objects.get(username=username)
+                if check_password(password, u.password): user = u
+            except User.DoesNotExist: pass
+
+        if user:
+            tokens = get_tokens_for_user(user)
+            return Response(tokens, status=status.HTTP_200_OK)
+
+        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
-# --- 2. New Registration View (No Change) ---
-class RegisterAPIView(APIView):
-    permission_classes = [] 
-    @transaction.atomic
-    def post(self, request):
-        auth_serializer = AuthUserSerializer(data=request.data)
-        if not auth_serializer.is_valid():
-            return Response(auth_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        user = auth_serializer.save()
-        profile_data = request.data
-        profile_data['id'] = user.id
-        profile_serializer = ProfileSerializer(data=profile_data)
-        if not profile_serializer.is_valid():
-            transaction.set_rollback(True)
-            return Response(profile_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        profile_serializer.save()
-        return Response(
-            {"message": "User registered successfully"}, 
-            status=status.HTTP_201_CREATED
-        )
+# --- 3. API ViewSets (NOW ALL SECURE) ---
+# We REMOVED the CreateUserPermissionMixin.
+# All endpoints are now secure by default from settings.py
 
-# --- 3. ViewSet for 'auth.User' (No Change) ---
+class TeacherViewSet(viewsets.ModelViewSet):
+    queryset = Teacher.objects.all()
+    serializer_class = TeacherSerializer
+
+class StudentViewSet(viewsets.ModelViewSet):
+    queryset = Student.objects.all()
+    serializer_class = StudentSerializer
+
+class ParentsViewSet(viewsets.ModelViewSet):
+    queryset = Parents.objects.all()
+    serializer_class = ParentsSerializer
+
+class SystemadminViewSet(viewsets.ModelViewSet):
+    queryset = Systemadmin.objects.all()
+    serializer_class = SystemadminSerializer
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
-    serializer_class = AuthUserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserSerializer
 
-# --- 4. ViewSet for 'backend.Users' (No Change) ---
-class ProfileViewSet(viewsets.ModelViewSet):
-    queryset = Profile.objects.all()
-    serializer_class = ProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
+class ClassesViewSet(viewsets.ModelViewSet):
+    queryset = Classes.objects.all()
+    serializer_class = ClassesSerializer
 
+class SectionViewSet(viewsets.ModelViewSet):
+    queryset = Section.objects.all()
+    serializer_class = SectionSerializer
+
+class SubjectViewSet(viewsets.ModelViewSet):
+    queryset = Subject.objects.all()
+    serializer_class = SubjectSerializer

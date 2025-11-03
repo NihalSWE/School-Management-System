@@ -134,16 +134,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        # Use the standard JWT auth
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
-    # --- ADD THIS ---
     'DEFAULT_PERMISSION_CLASSES': [
+        # Make all views secure by default
         'rest_framework.permissions.IsAuthenticated',
     ]
 }
 
-
-# --- ADD THIS NEW DICTIONARY FOR JWT ---
+# And make sure your SIMPLE_JWT config is UN-COMMENTED
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
