@@ -1383,6 +1383,17 @@ class Parents(models.Model):
     create_username = models.CharField(max_length=60)
     create_usertype = models.CharField(max_length=60)
     active = models.IntegerField()
+    
+    def __str__(self):
+        return self.name
+
+    @property
+    def is_active(self):
+        return self.active == 1
+
+    @property
+    def is_authenticated(self):
+        return True
 
     class Meta:
         managed = False
@@ -2006,6 +2017,17 @@ class Student(models.Model):
     create_username = models.CharField(max_length=60)
     create_usertype = models.CharField(max_length=60)
     active = models.IntegerField()
+    
+    def __str__(self):
+        return self.name
+
+    @property
+    def is_active(self):
+        return self.active == 1
+
+    @property
+    def is_authenticated(self):
+        return True
 
     class Meta:
         managed = False
@@ -2172,6 +2194,20 @@ class Systemadmin(models.Model):
     systemadminextra1 = models.CharField(max_length=128, blank=True, null=True)
     systemadminextra2 = models.CharField(max_length=128, blank=True, null=True)
 
+    def __str__(self):
+        return self.name
+    
+    @property
+    def is_active(self):
+        """Django's auth system expects this attribute."""
+        return self.active == 1  # Assuming 1 means active
+
+    @property
+    def is_authenticated(self):
+        """Tells Django's auth system this user is always authenticated."""
+        return True
+    
+    
     class Meta:
         managed = False
         db_table = 'systemadmin'
@@ -2245,6 +2281,14 @@ class Teacher(models.Model):
 
     def __str__(self):
         return self.name
+    
+    @property
+    def is_active(self):
+        return self.active == 1
+
+    @property
+    def is_authenticated(self):
+        return True
     
     class Meta:
         managed = False
@@ -2389,6 +2433,17 @@ class User(models.Model):
     create_username = models.CharField(max_length=60)
     create_usertype = models.CharField(max_length=60)
     active = models.IntegerField()
+    
+    def __str__(self):
+        return self.name
+
+    @property
+    def is_active(self):
+        return self.active == 1
+
+    @property
+    def is_authenticated(self):
+        return True
 
     class Meta:
         managed = False

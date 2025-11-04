@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from .models import *
 from django.contrib.auth.hashers import make_password
-from django.utils import timezone # <-- We fixed this
+from django.utils import timezone
 
 # --- HELPER METHOD TO GET USER INFO FROM TOKEN ---
 def get_user_info_from_request(request):
@@ -20,8 +20,6 @@ def get_user_info_from_request(request):
 
 
 # --- 1. NEW "AUDIT" BASE CLASS ---
-# This single class will auto-fill create/modify fields
-# for ALL models that need it.
 class AuditBaseSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context.get('request')
@@ -42,16 +40,46 @@ class AuditBaseSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 # --- 2. UPDATE "USER" BASE CLASS ---
-# It now inherits from our new AuditBaseSerializer
 class BaseUserSerializer(AuditBaseSerializer):
+    
+    # --- THIS IS THE NEW, CORRECTED VALIDATION ---
+    def validate_username(self, value):
+        """
+        Check that the username is unique across all 5 user tables.
+        """
+        model = self.Meta.model
+        all_user_models = [Teacher, Student, Parents, Systemadmin, User]
+        
+        for user_model in all_user_models:
+            query = user_model.objects.filter(username=value)
+            
+            # If we are *updating* a user, we must exclude their
+            # own record from the uniqueness check.
+            if self.instance and isinstance(self.instance, user_model):
+                query = query.exclude(pk=self.instance.pk)
+            
+            if query.exists():
+                raise serializers.ValidationError(f"This username is already taken by a {user_model.__name__}.")
+                
+        return value
+    
     def create(self, validated_data):
         # Hash password if it exists
         if 'password' in validated_data:
             validated_data['password'] = make_password(validated_data['password'])
         # The parent (AuditBaseSerializer) will handle the audit fields
         return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        # Hash password *if* it's being updated
+        if 'password' in validated_data:
+            validated_data['password'] = make_password(validated_data['password'])
+        
+        # This now correctly ignores the password if it's not sent,
+        # and the original hash will be safe.
+        return super().update(instance, validated_data)
 
-# --- 3. ALL SERIALIZERS ARE NOW CLEANER ---
+# --- 3. ALL USER SERIALIZERS ---
 
 class TeacherSerializer(BaseUserSerializer):
     class Meta:
@@ -59,7 +87,6 @@ class TeacherSerializer(BaseUserSerializer):
         fields = '__all__'
         extra_kwargs = {
             'password': {'write_only': True},
-            # Set all auto-filled fields to read_only
             'create_date': {'read_only': True},
             'modify_date': {'read_only': True},
             'create_userid': {'read_only': True},
@@ -121,8 +148,7 @@ class UserSerializer(BaseUserSerializer):
             'create_usertype': {'read_only': True},
         }
 
-# --- 4. UPDATE "LOOKUP" SERIALIZERS ---
-# They now inherit from AuditBaseSerializer and will auto-fill!
+# --- 4. "LOOKUP" SERIALIZERS ---
 
 class ClassesSerializer(AuditBaseSerializer):
     teacher_name = serializers.StringRelatedField(source='teacherid', read_only=True)
@@ -163,3 +189,12 @@ class SubjectSerializer(AuditBaseSerializer):
             'create_username': {'read_only': True},
             'create_usertype': {'read_only': True},
         }
+
+# --- 5. IMPORT AND ADD THE MISSING CLASS ---
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+
+class CustomTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        refresh = self.token_class(attrs["refresh"])
+        data = {"access": str(refresh.access_token)}
+        return data
