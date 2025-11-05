@@ -29,6 +29,12 @@ router.register(r'students', views.StudentViewSet, basename='student')
 router.register(r'parents', views.ParentsViewSet, basename='parent')
 router.register(r'systemadmins', views.SystemadminViewSet, basename='systemadmin')
 router.register(r'users', views.UserViewSet, basename='user')
+router.register(r'exams', views.ExamViewSet, basename='exam')
+router.register(r'grades', views.GradeViewSet, basename='grade')
+router.register(r'marks', views.MarkViewSet, basename='mark')
+router.register(r'markrelations', views.MarkrelationViewSet, basename='markrelation')
+router.register(r'markpercentages', views.MarkpercentageViewSet, basename='markpercentage')
+router.register(r'subjectteachers', views.SubjectteacherViewSet, basename='subjectteacher')
 
 
 # --- 5. URLPATTERNS (Updated) ---

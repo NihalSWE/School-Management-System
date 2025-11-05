@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import *
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
 # --- HELPER METHOD TO GET USER INFO FROM TOKEN ---
 def get_user_info_from_request(request):
@@ -21,16 +22,27 @@ def get_user_info_from_request(request):
 
 # --- 1. NEW "AUDIT" BASE CLASS ---
 class AuditBaseSerializer(serializers.ModelSerializer):
+    
     def create(self, validated_data):
         request = self.context.get('request')
-        user_info = get_user_info_from_request(request)
-
-        # Auto-fill the audit fields
-        validated_data['create_date'] = timezone.now()
-        validated_data['modify_date'] = timezone.now()
-        validated_data['create_userid'] = user_info.get('user_id', 0)
-        validated_data['create_username'] = user_info.get('username', 'unknown')
-        validated_data['create_usertype'] = user_info.get('user_type_name', 'unknown')
+        
+        # Get the current time once
+        now = timezone.now()
+        
+        if request and request.user.is_authenticated:
+            # Set all the audit fields that our models need
+            validated_data['create_date'] = now
+            
+            # --- THIS IS THE FIX ---
+            # All our audit models (Teacher, Student, Markpercentage)
+            # require modify_date to be set on creation.
+            validated_data['modify_date'] = now 
+            
+            validated_data['create_userid'] = request.auth.get('user_id')
+            validated_data['create_username'] = request.user.username
+            
+            # This is the field your main user tables use
+            validated_data['create_usertype'] = request.auth.get('user_type') 
         
         return super().create(validated_data)
     
@@ -190,8 +202,113 @@ class SubjectSerializer(AuditBaseSerializer):
             'create_usertype': {'read_only': True},
         }
 
+
+
+# --- 5. MARKING SYSTEM "SETUP" SERIALIZERS ---
+
+class ExamSerializer(serializers.ModelSerializer): # <-- THE FIX
+    class Meta:
+        model = Exam
+        fields = '__all__'
+       
+
+class GradeSerializer(serializers.ModelSerializer): # <-- THE FIX
+    class Meta:
+        model = Grade
+        fields = '__all__'
+      
+
+# --- THIS IS THE MAIN MARK SERIALIZER ---
+
+class MarkSerializer(serializers.ModelSerializer):
+    """
+    This serializer creates the "Mark Header" record.
+    It manually handles its own special audit fields.
+    It does NOT handle the score itself.
+    """
+    # --- Smart Read-Only Fields (for GET requests) ---
+    student_name = serializers.StringRelatedField(source='studentid', read_only=True)
+    class_name = serializers.StringRelatedField(source='classesid', read_only=True)
+    exam_name_from_id = serializers.StringRelatedField(source='examid', read_only=True)
+
+    class Meta:
+        model = Mark
+        fields = '__all__'
+        extra_kwargs = {
+            # We make the audit fields read-only in the API...
+            # ...because we provide them in the create() method.
+            'create_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_usertypeid': {'read_only': True},
+        }
+
+    #
+    # --- WE HAVE REMOVED THE _get_grade_for_mark METHOD ---
+    #
+    
+    def create(self, validated_data):
+        # --- 1. MANUALLY ADD AUDIT FIELDS (WITH MAPPING) ---
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['create_date'] = timezone.now()
+            validated_data['create_userid'] = request.auth.get('user_id')
+            
+            # --- THIS FIXES THE "usertypeID cannot be null" ERROR ---
+            user_type_str = request.auth.get('user_type') # e.g., "teacher"
+            
+            # Map the string name to the integer ID
+            usertypeid = None
+            if user_type_str == 'systemadmin':
+                usertypeid = 1
+            elif user_type_str == 'teacher':
+                usertypeid = 2
+            elif user_type_str == 'student':
+                usertypeid = 3
+            elif user_type_str == 'parent':
+                usertypeid = 4
+            elif user_type_str == 'user':
+                usertypeid = 5
+            
+            validated_data['create_usertypeid'] = usertypeid
+        
+        # --- 2. WE HAVE REMOVED THE BROKEN "SMART" GRADE LOGIC ---
+        
+        return super().create(validated_data)
+    
+class MarkpercentageSerializer(AuditBaseSerializer):
+    class Meta:
+        model = Markpercentage
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_username': {'read_only': True},
+            'create_usertype': {'read_only': True},
+        }
+    
+class MarkrelationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Markrelation
+        fields = '__all__'
+    
+class SubjectteacherSerializer(serializers.ModelSerializer): # <-- THE FIX
+    # --- Smart Read-Only Fields ---
+    class_name = serializers.StringRelatedField(source='classesid', read_only=True)
+    section_name = serializers.StringRelatedField(source='sectionid', read_only=True)
+    subject_name = serializers.StringRelatedField(source='subjectid', read_only=True)
+    teacher_name = serializers.StringRelatedField(source='teacherid', read_only=True)
+
+    class Meta:
+        model = Subjectteacher
+        fields = '__all__'
+
+
+
+
+
 # --- 5. IMPORT AND ADD THE MISSING CLASS ---
-from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+
 
 class CustomTokenRefreshSerializer(TokenRefreshSerializer):
     def validate(self, attrs):

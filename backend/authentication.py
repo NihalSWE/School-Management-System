@@ -35,7 +35,7 @@ class CustomJWTAuthentication(JWTAuthentication):
                 user = Parents.objects.get(pk=user_id)
             elif user_type == 'systemadmin':
                 user = Systemadmin.objects.get(pk=user_id)
-            elif user_type == 'user':
+            elif user_type == 'staff':
                 user = User.objects.get(pk=user_id)
             else:
                 raise exceptions.AuthenticationFailed(_('Invalid user type in token.'))

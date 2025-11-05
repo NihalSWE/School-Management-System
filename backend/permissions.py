@@ -18,7 +18,7 @@ class IsAdminOrReadOnly(BasePermission):
         # Write permissions are only allowed if the user is an admin.
         # We check the 'user_type' claim from our custom token.
         user_type = request.auth.get('user_type')
-        return user_type == 'systemadmin' or user_type == 'user'
+        return user_type == 'systemadmin' 
 
 class IsAdminOrStudentOwner(BasePermission):
     """
@@ -38,7 +38,7 @@ class IsAdminOrStudentOwner(BasePermission):
 
         if view.action == 'create':
             # Only Admins can create new students
-            return user_type == 'systemadmin' or user_type == 'user'
+            return user_type == 'systemadmin' 
         
         # For 'list', 'retrieve', 'update', 'delete',
         # any authenticated user can *try*.
@@ -51,7 +51,7 @@ class IsAdminOrStudentOwner(BasePermission):
         user_id = request.auth.get('user_id')
 
         # Admins can do anything to any object
-        if user_type == 'systemadmin' or user_type == 'user':
+        if user_type == 'systemadmin':
             return True
 
         # --- Student Rules ---
@@ -96,7 +96,7 @@ class IsAdminOrTeacherOwner(BasePermission):
 
         if view.action == 'create':
             # Only Admins can create new teachers
-            return user_type == 'systemadmin' or user_type == 'user'
+            return user_type == 'systemadmin'
         
         return True # Allow list, retrieve, update, delete *attempts*
 
@@ -105,7 +105,7 @@ class IsAdminOrTeacherOwner(BasePermission):
         user_id = request.auth.get('user_id')
 
         # Admins can do anything
-        if user_type == 'systemadmin' or user_type == 'user':
+        if user_type == 'systemadmin' :
             return True
 
         # --- Teacher Rules ---
@@ -141,14 +141,14 @@ class IsAdminOrParentOwner(BasePermission):
             return False
         user_type = request.auth.get('user_type')
         if view.action == 'create':
-            return user_type == 'systemadmin' or user_type == 'user'
+            return user_type == 'systemadmin' 
         return True
 
     def has_object_permission(self, request, view, obj):
         user_type = request.auth.get('user_type')
         user_id = request.auth.get('user_id')
 
-        if user_type == 'systemadmin' or user_type == 'user':
+        if user_type == 'systemadmin' :
             return True
 
         if user_type == 'parent':
@@ -170,4 +170,58 @@ class IsAdminUser(BasePermission):
             return False
         
         user_type = request.auth.get('user_type')
-        return user_type == 'systemadmin' or user_type == 'user'
+        return user_type == 'systemadmin' 
+    
+class IsAdminOrTeacherForMarks(BasePermission):
+    """
+    Custom permission for the MarkViewSet.
+    - Admins can do anything.
+    - Teachers can create, read, and update marks.
+    - Students and Parents can only read.
+    """
+
+    def has_permission(self, request, view):
+        # Must be authenticated to do anything
+        if not (request.user and request.user.is_authenticated):
+            return False
+
+        user_type = request.auth.get('user_type')
+
+        # Admins can do anything
+        if user_type == 'systemadmin' :
+            return True
+
+        # Teachers can create, list, and retrieve
+        if user_type == 'teacher':
+            return True
+
+        # Students and Parents can only perform read-only actions
+        if user_type == 'student' or user_type == 'parent':
+            return request.method in SAFE_METHODS
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        # 'obj' is the Mark object
+        user_type = request.auth.get('user_type')
+        user_id = request.auth.get('user_id')
+
+        # Admins can do anything to any object
+        if user_type == 'systemadmin' :
+            return True
+
+        # --- Teacher Rules ---
+        if user_type == 'teacher':
+            # Teachers can update or view marks
+            if view.action in ['retrieve', 'update', 'partial_update']:
+                # (We could add a check here to ensure it's their own student)
+                return True
+            else:
+                return False
+
+        # --- Student/Parent Rules ---
+        if user_type == 'student' or user_type == 'parent':
+            # Students/Parents can only read, not update/delete
+            return request.method in SAFE_METHODS
+
+        return False

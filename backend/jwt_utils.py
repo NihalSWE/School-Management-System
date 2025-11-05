@@ -32,7 +32,7 @@ def get_tokens_for_user(user):
     elif isinstance(user, Systemadmin):
         refresh['user_type'] = 'systemadmin'
     elif isinstance(user, User):
-        refresh['user_type'] = 'user'
+        refresh['user_type'] = 'staff'
 
     return {
         'refresh': str(refresh),
