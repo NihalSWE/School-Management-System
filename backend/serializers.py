@@ -204,6 +204,123 @@ class SubjectSerializer(AuditBaseSerializer):
 
 
 
+class RoutineSerializer(serializers.ModelSerializer):
+    """ Serializer for the 'Routine' table. """
+    class Meta:
+        model = Routine
+        fields = '__all__'
+
+class SyllabusSerializer(serializers.ModelSerializer):
+    """
+    SPECIAL Serializer for the 'Syllabus' table.
+    It manually handles its audit fields (userid, usertypeid) on creation.
+    """
+    class Meta:
+        model = Syllabus
+        fields = '__all__'
+        extra_kwargs = {
+            'userid': {'read_only': True},
+            'usertypeid': {'read_only': True},
+        }
+    
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['userid'] = request.auth.get('user_id')
+            
+            # Map the string 'user_type' to the integer 'usertypeid'
+            user_type_str = request.auth.get('user_type')
+            usertypeid_map = {
+                'systemadmin': 1,
+                'teacher': 2,
+                'student': 3,
+                'parent': 4,
+                'staff': 5,
+            }
+            validated_data['usertypeid'] = usertypeid_map.get(user_type_str)
+
+        # Set date if not provided
+        if 'date' not in validated_data:
+            from django.utils import timezone
+            validated_data['date'] = timezone.now().date()
+            
+        return super().create(validated_data)
+
+class AssignmentSerializer(serializers.ModelSerializer):
+    """
+    SPECIAL Serializer for the 'Assignment' table.
+    It manually handles its audit fields (userid, usertypeid) on creation.
+    """
+    class Meta:
+        model = Assignment
+        fields = '__all__'
+        extra_kwargs = {
+            'userid': {'read_only': True},
+            'usertypeid': {'read_only': True},
+        }
+    
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['userid'] = request.auth.get('user_id')
+            
+            # Map the string 'user_type' to the integer 'usertypeid'
+            user_type_str = request.auth.get('user_type')
+            usertypeid_map = {
+                'systemadmin': 1,
+                'teacher': 2,
+                'student': 3,
+                'parent': 4,
+                'staff': 5,
+            }
+            validated_data['usertypeid'] = usertypeid_map.get(user_type_str)
+            
+        return super().create(validated_data)
+
+class AssignmentanswerSerializer(serializers.ModelSerializer):
+    """
+    SPECIAL Serializer for the 'Assignmentanswer' table.
+    It manually handles audit fields (uploaderID, uploadertypeID, answerdate)
+    on creation, as it's submitted by a Student.
+    """
+    student_name = serializers.SerializerMethodField()
+    class Meta:
+        model = Assignmentanswer
+        fields = '__all__'
+        extra_kwargs = {
+            'uploaderid': {'read_only': True},
+            'uploadertypeid': {'read_only': True},
+            'answerdate': {'read_only': True},
+        }
+
+    def get_student_name(self, obj):
+        """
+        This method looks up the student's name
+        using the 'uploaderid' from the answer.
+        """
+        try:
+            # Student model is already imported by StudentSerializer
+            student = Student.objects.get(studentid=obj.uploaderid)
+            return student.name
+        except Student.DoesNotExist:
+            return "Unknown Student"
+    
+    def create(self, validated_data):
+        request = self.context.get('request')
+        
+        # This action MUST be done by a student
+        if request and request.auth.get('user_type') == 'student':
+            validated_data['uploaderid'] = request.auth.get('user_id')
+            validated_data['uploadertypeid'] = 3 # 3 = Student
+            
+            from django.utils import timezone
+            validated_data['answerdate'] = timezone.now().date()
+            
+            return super().create(validated_data)
+        else:
+            raise serializers.ValidationError("Only students can submit answers.")
+
+
 # --- 5. MARKING SYSTEM "SETUP" SERIALIZERS ---
 
 class ExamSerializer(serializers.ModelSerializer): # <-- THE FIX
@@ -303,6 +420,56 @@ class SubjectteacherSerializer(serializers.ModelSerializer): # <-- THE FIX
         model = Subjectteacher
         fields = '__all__'
 
+
+
+
+class StudentattendanceSerializer(serializers.ModelSerializer):
+    """
+    SPECIAL Serializer for the 'Attendance' (student) crosstab table.
+    It manually handles its audit fields (userid, usertype) on creation.
+    """
+    class Meta:
+        model = Attendance
+        fields = '__all__'
+        
+        # Tell DRF that these fields are provided by the server,
+        # not by the user in the POST body.
+        extra_kwargs = {
+            'userid': {'read_only': True},
+            'usertype': {'read_only': True},
+        }
+    
+    def create(self, validated_data):
+        # Manually add the "creator" (the teacher) from the token
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['userid'] = request.auth.get('user_id')
+            validated_data['usertype'] = request.auth.get('user_type')
+        return super().create(validated_data)
+
+class TeacherattendanceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the 'Tattendance' (teacher) crosstab table.
+    """
+    class Meta:
+        model = Tattendance
+        fields = '__all__'
+
+class UserattendanceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the 'Uattendance' (staff/user) crosstab table.
+    """
+    class Meta:
+        model = Uattendance
+        fields = '__all__'
+
+class ExamattendanceSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the 'Eattendance' (exam attendance) log table.
+    """
+    class Meta:
+        model = Eattendance
+        fields = '__all__'
 
 
 

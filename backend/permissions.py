@@ -225,3 +225,164 @@ class IsAdminOrTeacherForMarks(BasePermission):
             return request.method in SAFE_METHODS
 
         return False
+    
+
+class IsAdminOrTeacherForAttendance(BasePermission):
+    """
+    Custom permission for Student Attendance.
+    - Admins can do anything.
+    - Teachers can create, read, and update attendance.
+    - Students and Parents can only read.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+
+        user_type = request.auth.get('user_type')
+
+        if user_type == 'systemadmin' or user_type == 'teacher':
+            return True
+
+        if user_type == 'student' or user_type == 'parent':
+            return request.method in SAFE_METHODS
+
+        return False # 'staff' and others are blocked
+
+class IsAdminOrTeacherSelfCreateRead(BasePermission):
+    """
+    Permission for Teacher Self-Attendance (Tattendance).
+    - Admin can do anything.
+    - Teacher can CREATE and READ their OWN records.
+    - Teacher CANNOT update or delete.
+    """
+    def has_permission(self, request, view):
+        user_type = request.auth.get('user_type')
+        if user_type == 'systemadmin':
+            return True # Admin can do all actions
+
+        if user_type == 'teacher':
+            # Allow READ (GET, HEAD, OPTIONS) and CREATE (POST)
+            return request.method in SAFE_METHODS or view.action == 'create'
+        
+        return False # Block everyone else
+
+class IsAdminOrStaffSelfCreateRead(BasePermission):
+    """
+    Permission for Staff Self-Attendance (Uattendance).
+    - Admin can do anything.
+    - Staff can CREATE and READ their OWN records.
+    - Staff CANNOT update or delete.
+    """
+    def has_permission(self, request, view):
+        user_type = request.auth.get('user_type')
+        if user_type == 'systemadmin':
+            return True # Admin can do all actions
+
+        if user_type == 'staff':
+            # Allow READ (GET, HEAD, OPTIONS) and CREATE (POST)
+            return request.method in SAFE_METHODS or view.action == 'create'
+        
+        return False # Block everyone else
+    
+    
+class IsAdminOrTeacherWriteOwner(BasePermission):
+    """
+    Custom permission for Syllabus and Assignment.
+    - Admins can do anything.
+    - Teachers can CREATE, READ, and UPDATE/DELETE *their own* entries.
+    - Students and Parents can only READ.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        
+        user_type = request.auth.get('user_type')
+
+        # Admins can do anything
+        if user_type == 'systemadmin':
+            return True
+        
+        # Teachers can create and read
+        if user_type == 'teacher':
+            return request.method in SAFE_METHODS or view.action == 'create'
+
+        # Students/Parents can only read
+        if user_type == 'student' or user_type == 'parent':
+            return request.method in SAFE_METHODS
+        
+        return False # Block 'staff'
+
+    def has_object_permission(self, request, view, obj):
+        user_type = request.auth.get('user_type')
+        user_id = request.auth.get('user_id')
+
+        # Admins can do anything
+        if user_type == 'systemadmin':
+            return True
+        
+        # Teachers can read, update, or delete *their own* records
+        if user_type == 'teacher':
+            if request.method in SAFE_METHODS:
+                return True # Allow reading
+            # Check if the teacher is the owner of the object
+            return obj.userid == user_id 
+
+        # Students/Parents can only read
+        if user_type == 'student' or user_type == 'parent':
+            return request.method in SAFE_METHODS
+
+        return False
+    
+class IsStudentOwnerForAnswer(BasePermission):
+    """
+    Custom permission for Assignment Answers.
+    - Students can CREATE answers, and READ/UPDATE/DELETE *their own*.
+    - Teachers can READ all answers for assignments in their class.
+    - Admins can do anything.
+    - Parents can READ their child's answers.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        
+        user_type = request.auth.get('user_type')
+
+        # Admins can do anything
+        if user_type == 'systemadmin':
+            return True
+        
+        # Students can create and read
+        if user_type == 'student':
+            return True
+
+        # Teachers and Parents can read
+        if user_type == 'teacher' or user_type == 'parent':
+            return request.method in SAFE_METHODS
+        
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        # 'obj' is the Assignmentanswer
+        user_type = request.auth.get('user_type')
+        user_id = request.auth.get('user_id')
+
+        # Admins can do anything
+        if user_type == 'systemadmin':
+            return True
+        
+        # Students can read, update, or delete *their own* answer
+        if user_type == 'student':
+            return obj.uploaderid == user_id
+
+        # Teachers can read any answer
+        if user_type == 'teacher':
+            return request.method in SAFE_METHODS
+
+        # Parents can read their child's answer
+        if user_type == 'parent':
+            if request.method in SAFE_METHODS:
+                from .models import Student # Local import
+                student_ids = Student.objects.filter(parentid=user_id).values_list('studentid', flat=True)
+                return obj.uploaderid in student_ids
+            
+        return False
