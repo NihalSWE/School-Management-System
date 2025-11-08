@@ -18,6 +18,7 @@ from .permissions import (
     IsAdminOrTeacherWriteOwner,IsStudentOwnerForAnswer
 )
 from .jwt_utils import get_tokens_for_user 
+from .hash_utils import check_ci_hash, make_ci_hash
 
 # Serializer Imports
 from .serializers import (
@@ -44,37 +45,46 @@ class CustomLoginView(APIView):
             return Response({'error': 'Username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
         
         user = None
-        # --- All your try/except blocks are 100% correct ---
+        user_object = None
+        # We replace 'check_password' with 'check_ci_hash'
         try:
             u = Teacher.objects.get(username=username)
-            if check_password(password, u.password): user = u
+            if check_ci_hash(password, u.password): user_object = u
         except Teacher.DoesNotExist: pass
-        if not user:
+        if not user_object:
             try:
                 u = Student.objects.get(username=username)
-                if check_password(password, u.password): user = u
+                if check_ci_hash(password, u.password): user_object = u
             except Student.DoesNotExist: pass
-        if not user:
+        if not user_object:
             try:
                 u = Parents.objects.get(username=username)
-                if check_password(password, u.password): user = u
+                if check_ci_hash(password, u.password): user_object = u
             except Parents.DoesNotExist: pass
-        if not user:
+        if not user_object:
             try:
                 u = Systemadmin.objects.get(username=username)
-                if check_password(password, u.password): user = u
+                if check_ci_hash(password, u.password): user_object = u
             except Systemadmin.DoesNotExist: pass
-        if not user:
+        if not user_object:
             try:
                 u = User.objects.get(username=username)
-                if check_password(password, u.password): user = u
+                if check_ci_hash(password, u.password): user_object = u
             except User.DoesNotExist: pass
 
-        if user:
-            # --- THIS IS THE FIX ---
-            tokens = get_tokens_for_user(user) # Get the tokens
+        if user_object:
+            # --- THIS IS THE FIX (PART 2) ---
+            # This is the "migration" logic.
+            # If the user's password was a Django hash (pbkdf2...),
+            # we re-hash it to the CodeIgniter format so they can
+            # log in on the CI side in the future.
+            if '$' in user_object.password:
+                user_object.password = make_ci_hash(password)
+                user_object.save(update_fields=['password'])
             
-            # Now, get the user_type string from the user object
+            # --- This is your existing "smart response" code ---
+            user = user_object # Assign to the 'user' var
+            tokens = get_tokens_for_user(user)
             user_type_str = None
             if isinstance(user, Teacher): user_type_str = 'teacher'
             elif isinstance(user, Student): user_type_str = 'student'
@@ -82,24 +92,68 @@ class CustomLoginView(APIView):
             elif isinstance(user, Systemadmin): user_type_str = 'systemadmin'
             elif isinstance(user, User): user_type_str = 'staff'
 
-            # Create a new, "smart" response for the frontend
             response_data = {
                 'refresh': tokens['refresh'],
                 'access': tokens['access'],
                 'user_type': user_type_str,
-                'email':user.email,
+                'email': user.email,
                 'userid': user.pk,
                 'name': user.name,
                 'username': user.username
             }
             return Response(response_data, status=status.HTTP_200_OK)
-            # --- END OF FIX ---
             
         return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
+
+
 # --- API ViewSets ---
 
+# --- THIS IS THE NEW "LIVE" TEST VIEW ---
+class TestAPIView(APIView):
+    """
+    This is a public, unauthenticated API endpoint
+    for frontend testing and development.
+    It returns REAL data from the database.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = [] # No auth required
+
+    def get(self, request, *args, **kwargs):
+        
+        # --- 1. Get Test Teacher Data ---
+        teacher_data = None
+        try:
+            # Get the first teacher from the database
+            teacher = Teacher.objects.first() 
+            if teacher:
+                # Serialize the data (no context needed for read-only)
+                teacher_data = TeacherSerializer(teacher).data
+        except Exception as e:
+            teacher_data = {"error": str(e)}
+
+        # --- 2. Get Test Student Data ---
+        student_data = None
+        try:
+            # Get the first student from the database
+            student = Student.objects.first()
+            if student:
+                # Serialize the data
+                student_data = StudentSerializer(student).data
+        except Exception as e:
+            student_data = {"error": str(e)}
+
+        # --- 3. Build the Response ---
+        response = {
+            "status": "success",
+            "message": "This is a test endpoint with real database data.",
+            "test_teacher": teacher_data or "No teachers found in database.",
+            "test_student": student_data or "No students found in database."
+        }
+        return Response(response, status=status.HTTP_200_OK)
+
+#-----------------------------------------------------------------
 class TeacherViewSet(viewsets.ModelViewSet):
     serializer_class = TeacherSerializer
     permission_classes = [IsAdminOrTeacherOwner]

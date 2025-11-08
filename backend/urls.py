@@ -49,6 +49,7 @@ router.register(r'examattendance', views.ExamattendanceViewSet, basename='examat
 urlpatterns = [
     path('login/', views.CustomLoginView.as_view(), name='custom_login'),
     
+    path('test/', views.TestAPIView.as_view(), name='test_api'),
     # --- 6. USE OUR NEW CUSTOM REFRESH VIEW ---
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     

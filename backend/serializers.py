@@ -4,6 +4,7 @@ from .models import *
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from .hash_utils import make_ci_hash
 
 # --- HELPER METHOD TO GET USER INFO FROM TOKEN ---
 def get_user_info_from_request(request):
@@ -78,17 +79,19 @@ class BaseUserSerializer(AuditBaseSerializer):
     def create(self, validated_data):
         # Hash password if it exists
         if 'password' in validated_data:
-            validated_data['password'] = make_password(validated_data['password'])
-        # The parent (AuditBaseSerializer) will handle the audit fields
+            # --- THIS IS THE FIX ---
+            # Was: make_password(validated_data['password'])
+            validated_data['password'] = make_ci_hash(validated_data['password'])
+        
         return super().create(validated_data)
     
     def update(self, instance, validated_data):
         # Hash password *if* it's being updated
         if 'password' in validated_data:
-            validated_data['password'] = make_password(validated_data['password'])
+            # --- THIS IS THE FIX ---
+            # Was: make_password(validated_data['password'])
+            validated_data['password'] = make_ci_hash(validated_data['password'])
         
-        # This now correctly ignores the password if it's not sent,
-        # and the original hash will be safe.
         return super().update(instance, validated_data)
 
 # --- 3. ALL USER SERIALIZERS ---
@@ -109,6 +112,7 @@ class TeacherSerializer(BaseUserSerializer):
 class StudentSerializer(BaseUserSerializer):
     class_name = serializers.StringRelatedField(source='classesid', read_only=True)
     section_name = serializers.StringRelatedField(source='sectionid', read_only=True)
+    parent_name = serializers.StringRelatedField(source='parentid', read_only=True)
     class Meta:
         model = Student
         fields = '__all__'
@@ -122,6 +126,7 @@ class StudentSerializer(BaseUserSerializer):
         }
 
 class ParentsSerializer(BaseUserSerializer):
+    students = StudentSerializer(many=True, read_only=True, source='student_set')
     class Meta:
         model = Parents
         fields = '__all__'
