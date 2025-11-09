@@ -3,6 +3,9 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
+#--for documentation
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+
 # --- 1. IMPORT THE DEFAULT VIEW WITH A NEW NAME ---
 from rest_framework_simplejwt.views import TokenRefreshView as DefaultTokenRefreshView
 
@@ -43,6 +46,7 @@ router.register(r'studentattendance', views.StudentattendanceViewSet, basename='
 router.register(r'teacherattendance', views.TeacherattendanceViewSet, basename='teacherattendance')
 router.register(r'userattendance', views.UserattendanceViewSet, basename='userattendance')
 router.register(r'examattendance', views.ExamattendanceViewSet, basename='examattendance')
+router.register(r'holidays', views.HolidayViewSet, basename='holiday')
 
 
 # --- 5. URLPATTERNS (Updated) ---
@@ -52,6 +56,15 @@ urlpatterns = [
     path('test/', views.TestAPIView.as_view(), name='test_api'),
     # --- 6. USE OUR NEW CUSTOM REFRESH VIEW ---
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
+    
+    
+    # --- "FLAWLESS" DOCUMENTATION URLS ---
+    path('schema/', SpectacularAPIView.as_view(), name='schema'),
+    
+    # --- 2. THIS IS THE "FLAWLESS" FIX ---
+    # We replaced 'SpectacularSwaggerView' with 'SpectacularRedocView'
+    path('docs/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    # ---
     
     path('', include(router.urls)),
 ]
