@@ -739,3 +739,58 @@ class CustomTokenRefreshSerializer(TokenRefreshSerializer):
         # This skips the database check for a blacklisted token.
         # It only validates the token's signature and expiry.
         return super(TokenRefreshSerializer, self).validate(attrs)
+    
+    
+class MediaCategorySerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: "Smart" serializer for Folders.
+    Auto-fills user and time.
+    """
+    class Meta:
+        model = MediaCategory
+        fields = '__all__'
+        extra_kwargs = {
+            'userid': {'read_only': True},
+            'usertypeid': {'read_only': True},
+            'create_time': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+        
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        user_type_id = usertypeid_map.get(user_type)
+
+        validated_data['userid'] = user_id
+        validated_data['usertypeid'] = user_type_id
+        validated_data['create_time'] = timezone.now()
+        
+        return super().create(validated_data)
+
+class MediaSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: "Smart" serializer for Files.
+    Auto-fills user.
+    """
+    class Meta:
+        model = Media
+        fields = '__all__'
+        extra_kwargs = {
+            'userid': {'read_only': True},
+            'usertypeid': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+        
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        user_type_id = usertypeid_map.get(user_type)
+
+        validated_data['userid'] = user_id
+        validated_data['usertypeid'] = user_type_id
+        
+        return super().create(validated_data)

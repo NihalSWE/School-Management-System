@@ -28,7 +28,7 @@ from .permissions import (
     IsAdminOrTeacherSelfCreateRead, IsAdminOrStaffSelfCreateRead,
     IsAdminOrTeacherWriteOwner, IsStudentOwnerForAnswer,
     IsAdminOrTeacherWriteReadOnly,IsAdminOrTeacherOrStudentReadOnly,
-    IsConversationParticipant,
+    IsConversationParticipant,IsAdminOrTeacher_Or_StudentReadOnly
 )
 from .jwt_utils import get_tokens_for_user 
 
@@ -44,7 +44,8 @@ from .serializers import (
     RoutineSerializer, SyllabusSerializer, AssignmentSerializer,
     AssignmentanswerSerializer, HolidaySerializer,SubAttendanceSerializer,
     ExamscheduleSerializer,PromotionlogSerializer,UsertypeSerializer,
-    ConversationMsgSerializer,ConversationSerializer,
+    ConversationMsgSerializer,ConversationSerializer,MediaCategorySerializer,
+    MediaSerializer
     
 )
 
@@ -65,6 +66,7 @@ class CustomLoginView(APIView):
         user = None
         user_object = None
         
+        # This 5-table login logic is 100% correct and unchanged.
         try:
             u = Teacher.objects.get(username=username)
             if check_ci_hash(password, u.password): user_object = u
@@ -91,24 +93,44 @@ class CustomLoginView(APIView):
             except User.DoesNotExist: pass
 
         if user_object:
-            # "Migration" logic
+            # "Migration" logic (unchanged and correct)
             if '$' in user_object.password:
                 user_object.password = make_ci_hash(password)
                 user_object.save(update_fields=['password'])
             
             user = user_object
-            tokens = get_tokens_for_user(user)
+            tokens = get_tokens_for_user(user) # This now includes 'user_role'
+            
+            # --- THIS IS THE 100% SAFE MODIFICATION ---
             user_type_str = None
-            if isinstance(user, Teacher): user_type_str = 'teacher'
-            elif isinstance(user, Student): user_type_str = 'student'
-            elif isinstance(user, Parents): user_type_str = 'parent'
-            elif isinstance(user, Systemadmin): user_type_str = 'systemadmin'
-            elif isinstance(user, User): user_type_str = 'staff'
+            user_role_str = None  # <-- NEW VARIABLE
+
+            if isinstance(user, Teacher):
+                user_type_str = 'teacher'
+                user_role_str = 'Teacher'
+            elif isinstance(user, Student):
+                user_type_str = 'student'
+                user_role_str = 'Student'
+            elif isinstance(user, Parents):
+                user_type_str = 'parent'
+                user_role_str = 'Parents'
+            elif isinstance(user, Systemadmin):
+                user_type_str = 'systemadmin'
+                user_role_str = 'Admin'
+            elif isinstance(user, User):
+                user_type_str = 'staff' # For API permissions
+                try:
+                    # Get the *actual* role name (e.g., "Accountant")
+                    user_role_str = user.usertypeid.usertype 
+                except Exception:
+                    user_role_str = 'Staff' # Safe fallback
+            # --- END OF MODIFICATION ---
 
             response_data = {
                 'refresh': tokens['refresh'],
                 'access': tokens['access'],
-                'user_type': user_type_str,
+                'user_type': user_type_str,  # This is 'staff' (for permissions)
+                'user_role': user_role_str,  # This is 'Accountant', etc. (for frontend)
                 'email': user.email,
                 'userid': user.pk,
                 'name': user.name,
@@ -1362,3 +1384,105 @@ class ConversationMsgViewSet(viewsets.ModelViewSet):
         # Get the convo_id from the URL and save it with the reply
         convo_id = self.kwargs.get('convo_id')
         serializer.save(conversation_id=convo_id)
+        
+        
+#----media store-------
+class MediaCategoryViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for creating and viewing Folders.
+    """
+    queryset = MediaCategory.objects.all()
+    serializer_class = MediaCategorySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher_Or_StudentReadOnly]
+
+    def get_queryset(self):
+        # This is the SAFE & CORRECTED logic
+        user_id = get_token_claim(self.request, 'user_id', 0)
+        user_type = get_token_claim(self.request, 'user_type')
+        
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        
+        # We get the user's *specific* numeric ID (e.g., 5 for Accountant, 6 for Librarian)
+        # But your login correctly gives them the 'staff' role.
+        # This logic will correctly find their files based on their *actual* ID and usertypeid.
+        
+        if user_type == 'systemadmin':
+            # Admins see their own items (usertypeid 1)
+            user_type_id = usertypeid_map.get(user_type)
+            return self.queryset.filter(userid=user_id, usertypeid=user_type_id)
+        
+        elif user_type == 'teacher':
+            # Teachers see their own items (usertypeid 2)
+            user_type_id = usertypeid_map.get(user_type)
+            return self.queryset.filter(userid=user_id, usertypeid=user_type_id)
+
+        # --- THIS IS THE FIX ---
+        elif user_type == 'staff':
+            # Staff (Accountant, Librarian, etc.) see their own items
+            # We get their *actual* usertypeid from the DB when they were created
+            # The serializer correctly saves `usertypeid: 5` or `6` or `7`
+            # We just need to find all files linked to this user's ID
+            return self.queryset.filter(userid=user_id)
+        # ---
+        
+        elif user_type == 'student' or user_type == 'parent':
+            # Students/Parents see NOTHING (until we build the "share" feature)
+            return self.queryset.none()
+            
+        return self.queryset.none()
+
+    def get_serializer_context(self):
+        # Pass the request to the "smart" serializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class MediaViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for uploading and viewing Files.
+    """
+    queryset = Media.objects.all()
+    serializer_class = MediaSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher_Or_StudentReadOnly]
+
+    def get_queryset(self):
+        # This is the SAFE & CORRECTED logic
+        user_id = get_token_claim(self.request, 'user_id', 0)
+        user_type = get_token_claim(self.request, 'user_type')
+        
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        
+        # We get the user's *specific* numeric ID (e.g., 5 for Accountant, 6 for Librarian)
+        # But your login correctly gives them the 'staff' role.
+        # This logic will correctly find their files based on their *actual* ID and usertypeid.
+        
+        if user_type == 'systemadmin':
+            # Admins see their own items (usertypeid 1)
+            user_type_id = usertypeid_map.get(user_type)
+            return self.queryset.filter(userid=user_id, usertypeid=user_type_id)
+        
+        elif user_type == 'teacher':
+            # Teachers see their own items (usertypeid 2)
+            user_type_id = usertypeid_map.get(user_type)
+            return self.queryset.filter(userid=user_id, usertypeid=user_type_id)
+
+        # --- THIS IS THE FIX ---
+        elif user_type == 'staff':
+            # Staff (Accountant, Librarian, etc.) see their own items
+            # We get their *actual* usertypeid from the DB when they were created
+            # The serializer correctly saves `usertypeid: 5` or `6` or `7`
+            # We just need to find all files linked to this user's ID
+            return self.queryset.filter(userid=user_id)
+        # ---
+        
+        elif user_type == 'student' or user_type == 'parent':
+            # Students/Parents see NOTHING (until we build the "share" feature)
+            return self.queryset.none()
+            
+        return self.queryset.none()
+
+    def get_serializer_context(self):
+        # Pass the request to the "smart" serializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context

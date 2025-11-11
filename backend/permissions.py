@@ -405,3 +405,25 @@ class IsConversationParticipant(BasePermission):
             user_id=user_id,
             usertypeid=user_type_id
         ).exists()
+        
+class IsAdminOrTeacher_Or_StudentReadOnly(BasePermission):
+    """
+    SAFE & CORRECTED:
+    - Admins, Teachers, AND STAFF can do anything (Create, Read, Update).
+    - Students (and Parents) can ONLY Read (GET).
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        user_type = get_token_claim(request, 'user_type')
+        
+        # --- THIS IS THE FIX ---
+        # Admins, Teachers, AND Staff get full access
+        if user_type == 'systemadmin' or user_type == 'teacher' or user_type == 'staff':
+            return True 
+        
+        if user_type == 'student' or user_type == 'parent':
+            return request.method in SAFE_METHODS # Students/Parents can only read
+            
+        return False # All others blocked

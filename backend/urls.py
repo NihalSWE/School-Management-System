@@ -51,6 +51,8 @@ router.register(r'subattendance', views.SubAttendanceViewSet, basename='subatten
 router.register(r'holidays', views.HolidayViewSet, basename='holiday')
 router.register(r'usertypes', views.UsertypeViewSet, basename='usertype')
 router.register(r'conversations', views.ConversationViewSet, basename='conversation')
+router.register(r'media-folders', views.MediaCategoryViewSet, basename='media-category')
+router.register(r'media-files', views.MediaViewSet, basename='media-file')
 
 
 # --- 5. URLPATTERNS (Updated) ---
