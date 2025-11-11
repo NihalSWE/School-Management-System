@@ -323,3 +323,45 @@ class IsStudentOwnerForAnswer(BasePermission):
                 return obj.uploaderid in student_ids
             
         return False
+    
+    
+class IsAdminOrTeacherWriteReadOnly(BasePermission):
+    """
+    "Flawless" Permission:
+    - Admins and Teachers can Create, Update, Delete.
+    - Students and Parents can only Read.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        user_type = get_token_claim(request, 'user_type')
+        
+        if user_type == 'systemadmin' or user_type == 'teacher':
+            return True # Admins and Teachers can do anything
+        
+        # Students and Parents can only use "safe" methods (GET)
+        return request.method in SAFE_METHODS
+    
+    
+class IsAdminOrTeacherOrStudentReadOnly(BasePermission):
+    """
+    "Flawless" Permission for the Student list:
+    - Admins can do anything.
+    - Teachers can only Read.
+    - Students can only Read.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        user_type = get_token_claim(request, 'user_type')
+        
+        if user_type == 'systemadmin':
+            return True # Admins can do anything
+        
+        # Teachers and Students can only use "safe" methods (GET)
+        if user_type == 'teacher' or user_type == 'student':
+            return request.method in SAFE_METHODS
+        
+        return False # "Flawlessly" blocks Parents and Staff

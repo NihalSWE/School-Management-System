@@ -38,6 +38,7 @@ router.register(r'systemadmins', views.SystemadminViewSet, basename='systemadmin
 router.register(r'users', views.UserViewSet, basename='user')
 router.register(r'exams', views.ExamViewSet, basename='exam')
 router.register(r'grades', views.GradeViewSet, basename='grade')
+router.register(r'examschedules', views.ExamscheduleViewSet, basename='examschedule')
 router.register(r'marks', views.MarkViewSet, basename='mark')
 router.register(r'markrelations', views.MarkrelationViewSet, basename='markrelation')
 router.register(r'markpercentages', views.MarkpercentageViewSet, basename='markpercentage')
@@ -46,6 +47,7 @@ router.register(r'studentattendance', views.StudentattendanceViewSet, basename='
 router.register(r'teacherattendance', views.TeacherattendanceViewSet, basename='teacherattendance')
 router.register(r'userattendance', views.UserattendanceViewSet, basename='userattendance')
 router.register(r'examattendance', views.ExamattendanceViewSet, basename='examattendance')
+router.register(r'subattendance', views.SubAttendanceViewSet, basename='subattendance')
 router.register(r'holidays', views.HolidayViewSet, basename='holiday')
 
 

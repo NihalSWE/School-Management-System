@@ -10,7 +10,8 @@ from rest_framework import viewsets, permissions, status, exceptions
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny,IsAdminUser
+
 
 # --- 1. IMPORT OUR NEW HELPERS ---
 from .token_utils import get_token_claim
@@ -24,7 +25,8 @@ from .permissions import (
     IsAdminOrTeacherOwner, IsAdminOrParentOwner, IsAdminUser,
     IsAdminOrTeacherForMarks,IsAdminOrTeacherForAttendance,
     IsAdminOrTeacherSelfCreateRead, IsAdminOrStaffSelfCreateRead,
-    IsAdminOrTeacherWriteOwner, IsStudentOwnerForAnswer
+    IsAdminOrTeacherWriteOwner, IsStudentOwnerForAnswer,
+    IsAdminOrTeacherWriteReadOnly,IsAdminOrTeacherOrStudentReadOnly
 )
 from .jwt_utils import get_tokens_for_user 
 
@@ -38,8 +40,12 @@ from .serializers import (
     StudentattendanceSerializer, TeacherattendanceSerializer, 
     UserattendanceSerializer, ExamattendanceSerializer,
     RoutineSerializer, SyllabusSerializer, AssignmentSerializer,
-    AssignmentanswerSerializer, HolidaySerializer
+    AssignmentanswerSerializer, HolidaySerializer,SubAttendanceSerializer,
+    ExamscheduleSerializer,PromotionlogSerializer
 )
+
+
+
 
 # --- 2. CUSTOM LOGIN VIEW (Uses hash_utils) ---
 class CustomLoginView(APIView):
@@ -143,6 +149,7 @@ class TestAPIView(APIView):
 # --- 4. API ViewSets (ALL HARDENED) ---
 
 class TeacherViewSet(viewsets.ModelViewSet):
+    queryset = Teacher.objects.all().order_by('-teacherid')
     serializer_class = TeacherSerializer
     permission_classes = [IsAdminOrTeacherOwner]
     ordering_fields = ['create_date'] 
@@ -167,6 +174,7 @@ class TeacherViewSet(viewsets.ModelViewSet):
         return context 
 
 class ParentsViewSet(viewsets.ModelViewSet):
+    queryset = Parents.objects.all().order_by('-parentsid')
     serializer_class = ParentsSerializer
     permission_classes = [IsAdminOrParentOwner]
     ordering_fields = ['create_date'] 
@@ -219,8 +227,9 @@ class UserViewSet(viewsets.ModelViewSet):
         return context
 
 class StudentViewSet(viewsets.ModelViewSet):
+    queryset = Student.objects.all().order_by('-studentid')
     serializer_class = StudentSerializer
-    permission_classes = [IsAdminOrStudentOwner]
+    permission_classes = [IsAdminOrTeacherOrStudentReadOnly]
     ordering_fields = ['create_date']
     ordering = ['-create_date']
     
@@ -244,6 +253,103 @@ class StudentViewSet(viewsets.ModelViewSet):
         
         # All other roles are forbidden
         raise exceptions.PermissionDenied(detail="You do not have permission to view this list.")
+    
+    # --- THIS IS THE "FLAWLESS" NEW PROMOTION FEATURE ---
+    @action(
+        detail=False, 
+        methods=['post'], 
+        url_path='promote',
+        permission_classes=[IsAdminUser] # "Flawless" safety net
+    )
+    def promote(self, request):
+        """
+        "Flawless" Admin tool to promote students from one
+        class and school year to a new one.
+        """
+        # 1. "Flawlessly" get data
+        data = request.data
+        from_schoolyear_id = data.get('schoolyearid')
+        from_class_id = data.get('classesid')
+        to_schoolyear_id = data.get('jumpschoolyearid')
+        to_class_id = data.get('jumpclassid')
+        promotion_type = data.get('promotiontype', 'Normal')
+
+        # 2. "Flawless" Validation
+        if not all([from_schoolyear_id, from_class_id, to_schoolyear_id, to_class_id]):
+            return Response(
+                {'error': 'Missing required fields: schoolyearid, classesid, jumpschoolyearid, or jumpclassid.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        promoted_student_ids = []
+        
+        # 3. "Flawless" Atomic Transaction (Our "Safety Net")
+        try:
+            with transaction.atomic():
+                
+                # --- "FLAWLESS" FIX: GET THE "TO" CLASS OBJECT ---
+                try:
+                    to_class_object = Classes.objects.get(classesid=to_class_id)
+                except Classes.DoesNotExist:
+                    raise Exception(f"Promotion failed: The 'To' Class (ID: {to_class_id}) does not exist.")
+                # ---
+                
+                # 4. Find all "flawless" students to promote
+                students_to_promote = Student.objects.filter(
+                    schoolyearid=from_schoolyear_id,
+                    classesid=from_class_id
+                )
+                
+                if not students_to_promote.exists():
+                    return Response(
+                        {'error': 'No students found in the "From" class to promote.'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                # 5. "Flawlessly" promote them
+                for student in students_to_promote:
+                    student.schoolyearid = to_schoolyear_id
+                    
+                    # --- "FLAWLESS" FIX: ASSIGN THE OBJECT ---
+                    student.classesid = to_class_object
+                    # ---
+                    
+                    student.save(update_fields=['schoolyearid', 'classesid'])
+                    promoted_student_ids.append(student.studentid)
+
+                # 6. "Flawlessly" log this "flawless" action
+                log_data = {
+                    'promotiontype': promotion_type,
+                    'classesid': from_class_id,
+                    'jumpclassid': to_class_id,
+                    'schoolyearid': from_schoolyear_id,
+                    'jumpschoolyearid': to_schoolyear_id,
+                    'promotestudents': str(promoted_student_ids),
+                    'status': 1
+                }
+                
+                log_serializer = PromotionlogSerializer(
+                    data=log_data,
+                    context={'request': request}
+                )
+                
+                if log_serializer.is_valid():
+                    log_serializer.save()
+                else:
+                    raise Exception(f"Failed to create promotion log: {log_serializer.errors}")
+
+        except Exception as e:
+            # The "flawless" transaction failed
+            return Response(
+                {'error': f"{e}"}, # "Flawlessly" show the real error
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # 7. "Flawless" Success
+        return Response(
+            {'status': f"Successfully promoted {len(promoted_student_ids)} students."},
+            status=status.HTTP_200_OK
+        )
 
 
 class ClassesViewSet(viewsets.ModelViewSet):
@@ -330,7 +436,44 @@ class GradeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminUser]
     ordering_fields = ['create_date']
     ordering = ['-create_date']
-    
+  
+
+class ExamscheduleViewSet(viewsets.ModelViewSet):
+    """
+    API for Exam Schedules.
+    - Admins/Teachers can write.
+    - Students/Parents can read.
+    """
+    queryset = Examschedule.objects.all().order_by('-examscheduleid')
+    serializer_class = ExamscheduleSerializer
+    permission_classes = [IsAdminOrTeacherWriteReadOnly] # <-- Use our new "flawless" permission
+
+    def get_queryset(self):
+        # "Flawless" hardened logic, similar to Routine
+        user = self.request.user
+        user_type = get_token_claim(self.request, 'user_type')
+        user_id = get_token_claim(self.request, 'user_id', 0)
+
+        if user_type == 'systemadmin':
+            return Examschedule.objects.all()
+
+        if user_type == 'teacher':
+            class_ids = Subjectteacher.objects.filter(teacherid=user_id).values_list('classesid', flat=True).distinct()
+            return Examschedule.objects.filter(classesid__in=class_ids)
+
+        if user_type == 'student' and hasattr(user, 'classesid_id'):
+            return Examschedule.objects.filter(classesid=user.classesid_id)
+
+        if user_type == 'parent':
+            try:
+                student = Student.objects.filter(parentid=user_id).first()
+                if student:
+                    return Examschedule.objects.filter(classesid=student.classesid_id)
+            except ObjectDoesNotExist:
+                return Examschedule.objects.none()
+
+        return Examschedule.objects.none()  
+  
 
 # --- THE MAIN MARK VIEWSET ---
 
@@ -517,23 +660,216 @@ class StudentattendanceViewSet(viewsets.ModelViewSet):
         
         return Response({'status': 'Attendance successfully saved'}, status=status.HTTP_200_OK)
 
+
+class SubAttendanceViewSet(viewsets.ModelViewSet):
+    """
+    API for Subject-wise Attendance.
+    - Admins/Teachers can write.
+    - Students/Parents can read.
+    - Provides a 'bulk-upsert' action for teachers.
+    """
+    queryset = SubAttendance.objects.all()
+    serializer_class = SubAttendanceSerializer
+    permission_classes = [IsAdminOrTeacherForAttendance] # We can re-use the same permission
+
+    def get_queryset(self):
+        # This is "flawless" hardened logic, copied from Studentattendance
+        user_type = get_token_claim(self.request, 'user_type')
+        user_id = get_token_claim(self.request, 'user_id', 0)
+
+        if not user_id:
+            return SubAttendance.objects.none()
+
+        if user_type == 'systemadmin':
+            return SubAttendance.objects.all()
+
+        if user_type == 'teacher':
+            class_ids = Subjectteacher.objects.filter(teacherid=user_id).values_list('classesid', flat=True).distinct()
+            return SubAttendance.objects.filter(classesid__in=class_ids)
+
+        if user_type == 'student':
+            return SubAttendance.objects.filter(studentid=user_id)
+
+        if user_type == 'parent':
+            student_ids = Student.objects.filter(parentid=user_id).values_list('studentid', flat=True)
+            return SubAttendance.objects.filter(studentid__in=student_ids)
+
+        return SubAttendance.objects.none()
+
+    # --- "FLAWLESS" BULK FEATURE FOR SUBJECTS ---
+    @action(detail=False, methods=['post'], url_path='bulk-upsert')
+    def bulk_upsert(self, request):
+        """
+        "Flawless" bulk API for teachers to submit SUBJECT attendance
+        for an entire class on a single day.
+        """
+        # 1. Get data from the JSON body
+        payload = request.data
+        schoolyear_id = payload.get('schoolyearid')
+        class_id = payload.get('classesid')
+        section_id = payload.get('sectionid')
+        subject_id = payload.get('subjectid')  # <-- THE NEW REQUIRED FIELD
+        date_str = payload.get('date')
+        records = payload.get('records', [])
+
+        # 2. Get data from the token (for the 'defaults')
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type_str = get_token_claim(request, 'user_type', 'teacher')
+
+        # 3. Validation
+        if not all([schoolyear_id, class_id, section_id, subject_id, date_str, records]):
+            return Response({'error': 'Missing required fields: schoolyearid, classesid, sectionid, subjectid, date, or records.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # 4. Get the day and month
+            day_num = int(date_str.split('-')[2])
+            day_col = f'a{day_num}'
+            month_year = date_str[0:7]
+        except Exception as e:
+            return Response({'error': f"Invalid date format: {e}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        errors = []
+
+        # 5. --- Start "Flawless" Transaction ---
+        try:
+            with transaction.atomic():
+                for rec in records:
+                    student_id = rec.get('studentid')
+                    attendance_status = rec.get('status')
+
+                    if not all([student_id, attendance_status]):
+                        errors.append(f"Skipped record: missing studentid or status.")
+                        continue
+
+                    # 6. This is the "Upsert" logic, now including 'subjectid'
+                    obj, created = SubAttendance.objects.get_or_create(
+                        schoolyearid=schoolyear_id,
+                        studentid=student_id,
+                        monthyear=month_year,
+                        classesid=class_id,
+                        subjectid=subject_id,  # <-- THE NEW KEY
+                        defaults={
+                            'sectionid': section_id,
+                            'userid': user_id,
+                            'usertype': user_type_str,
+                        }
+                    )
+
+                    # 7. Set the value for the correct day column
+                    setattr(obj, day_col, attendance_status)
+                    obj.save()
+
+        except Exception as e:
+            return Response({'error': f"Transaction failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # 8. Success!
+        if errors:
+            return Response({'status': 'Partial success', 'errors': errors}, status=status.HTTP_207_MULTI_STATUS)
+
+        return Response({'status': 'Subject attendance successfully saved'}, status=status.HTTP_200_OK)
+
+
+
+
 class TeacherattendanceViewSet(viewsets.ModelViewSet):
     queryset = Tattendance.objects.all()
     serializer_class = TeacherattendanceSerializer
     permission_classes = [IsAdminOrTeacherSelfCreateRead]
 
     def get_queryset(self):
-        # --- HARDENED ---
+        # ... (this get_queryset method is already "flawless") ...
         user_type = get_token_claim(self.request, 'user_type')
         user_id = get_token_claim(self.request, 'user_id', 0)
-
         if user_type == 'systemadmin':
             return Tattendance.objects.all()
-
         if user_type == 'teacher':
             return Tattendance.objects.filter(teacherid=user_id)
-        
         return Tattendance.objects.none()
+
+    # --- "FLAWLESS" FIX FOR SELF-ATTENDANCE ---
+    def create(self, request, *args, **kwargs):
+        """
+        "Flawless" security hijack for a Teacher POST.
+        This forces the attendance to be for the logged-in teacher and today.
+        This bypasses the serializer validation.
+        """
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+
+        if user_type != 'teacher':
+            raise exceptions.PermissionDenied("Only teachers can mark self-attendance.")
+
+        today = timezone.now().date()
+        day_num = today.day
+        day_col = f'a{day_num}'
+        month_year = today.strftime("%Y-%m")
+        # We assume schoolyearid=1 for self-attendance.
+        # This can be changed to pull from request.data if needed.
+        schoolyear_id = request.data.get('schoolyearid', 1) 
+
+        # "Flawless" Upsert logic
+        try:
+            obj, created = Tattendance.objects.get_or_create(
+                schoolyearid=schoolyear_id,
+                teacherid=user_id,
+                monthyear=month_year,
+                defaults={'usertypeid': 2} # 2 = Teacher
+            )
+            
+            attendance_status = request.data.get('status', 'P')
+            setattr(obj, day_col, attendance_status)
+            obj.save()
+            
+            # Return a "flawless" 200 OK response
+            serializer = self.get_serializer(obj)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {'error': f"Transaction failed: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    # --- "FLAWLESS" BULK FEATURE FOR ADMINS ---
+    @action(detail=False, methods=['post'], url_path='bulk-upsert')
+    def bulk_upsert(self, request):
+        # ... (this bulk_upsert method is already "flawless") ...
+        # (No changes needed here)
+        payload = request.data
+        schoolyear_id = payload.get('schoolyearid')
+        date_str = payload.get('date')
+        records = payload.get('records', [])
+        if not all([schoolyear_id, date_str, records]):
+            return Response({'error': 'Missing required fields: schoolyearid, date, or records.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            day_num = int(date_str.split('-')[2])
+            day_col = f'a{day_num}'
+            month_year = date_str[0:7]
+        except Exception as e:
+            return Response({'error': f"Invalid date format: {e}"}, status=status.HTTP_400_BAD_REQUEST)
+        errors = []
+        try:
+            with transaction.atomic():
+                for rec in records:
+                    teacher_id = rec.get('teacherid')
+                    attendance_status = rec.get('status')
+                    if not all([teacher_id, attendance_status]):
+                        errors.append(f"Skipped record: missing teacherid or status.")
+                        continue
+                    obj, created = Tattendance.objects.get_or_create(
+                        schoolyearid=schoolyear_id,
+                        teacherid=teacher_id,
+                        monthyear=month_year,
+                        defaults={'usertypeid': 1}
+                    )
+                    setattr(obj, day_col, attendance_status)
+                    obj.save()
+        except Exception as e:
+            return Response({'error': f"Transaction failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if errors:
+            return Response({'status': 'Partial success', 'errors': errors}, status=status.HTTP_207_MULTI_STATUS)
+        return Response({'status': 'Teacher attendance successfully saved'}, status=status.HTTP_200_OK)
 
 class UserattendanceViewSet(viewsets.ModelViewSet):
     queryset = Uattendance.objects.all()
@@ -541,46 +877,179 @@ class UserattendanceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrStaffSelfCreateRead]
 
     def get_queryset(self):
-        # --- HARDENED ---
+        # ... (this get_queryset method is already "flawless") ...
         user_type = get_token_claim(self.request, 'user_type')
         user_id = get_token_claim(self.request, 'user_id', 0)
-
         if user_type == 'systemadmin':
             return Uattendance.objects.all()
-
-        if user_type == 'staff': # 'staff' is our internal name
+        if user_type == 'staff':
             return Uattendance.objects.filter(userid=user_id)
-        
         return Uattendance.objects.none()
 
+    # --- "FLAWLESS" FIX FOR SELF-ATTENDANCE ---
+    def create(self, request, *args, **kwargs):
+        """
+        "Flawless" security hijack for a Staff POST.
+        This forces the attendance to be for the logged-in staff member and today.
+        """
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+
+        if user_type != 'staff':
+            raise exceptions.PermissionDenied("Only staff can mark self-attendance.")
+
+        today = timezone.now().date()
+        day_num = today.day
+        day_col = f'a{day_num}'
+        month_year = today.strftime("%Y-%m")
+        schoolyear_id = request.data.get('schoolyearid', 1) # Assume 1
+
+        # "Flawless" Upsert logic
+        try:
+            obj, created = Uattendance.objects.get_or_create(
+                schoolyearid=schoolyear_id,
+                userid=user_id,
+                monthyear=month_year,
+                defaults={'usertypeid': 5} # 5 = Staff
+            )
+            
+            attendance_status = request.data.get('status', 'P')
+            setattr(obj, day_col, attendance_status)
+            obj.save()
+
+            serializer = self.get_serializer(obj)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {'error': f"Transaction failed: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    # --- "FLAWLESS" BULK FEATURE FOR ADMINS ---
+    @action(detail=False, methods=['post'], url_path='bulk-upsert')
+    def bulk_upsert(self, request):
+        # ... (this bulk_upsert method is already "flawless") ...
+        # (No changes needed here)
+        payload = request.data
+        schoolyear_id = payload.get('schoolyearid')
+        date_str = payload.get('date')
+        records = payload.get('records', [])
+        if not all([schoolyear_id, date_str, records]):
+            return Response({'error': 'Missing required fields: schoolyearid, date, or records.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            day_num = int(date_str.split('-')[2])
+            day_col = f'a{day_num}'
+            month_year = date_str[0:7]
+        except Exception as e:
+            return Response({'error': f"Invalid date format: {e}"}, status=status.HTTP_400_BAD_REQUEST)
+        errors = []
+        try:
+            with transaction.atomic():
+                for rec in records:
+                    user_id = rec.get('userid')
+                    attendance_status = rec.get('status')
+                    if not all([user_id, attendance_status]):
+                        errors.append(f"Skipped record: missing userid or status.")
+                        continue
+                    obj, created = Uattendance.objects.get_or_create(
+                        schoolyearid=schoolyear_id,
+                        userid=user_id,
+                        monthyear=month_year,
+                        defaults={'usertypeid': 1}
+                    )
+                    setattr(obj, day_col, attendance_status)
+                    obj.save()
+        except Exception as e:
+            return Response({'error': f"Transaction failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if errors:
+            return Response({'status': 'Partial success', 'errors': errors}, status=status.HTTP_207_MULTI_STATUS)
+        return Response({'status': 'User attendance successfully saved'}, status=status.HTTP_200_OK)
+
 class ExamattendanceViewSet(viewsets.ModelViewSet):
-    queryset = Eattendance.objects.all()
+    queryset = Eattendance.objects.all().order_by('-eattendanceid')
     serializer_class = ExamattendanceSerializer
     permission_classes = [IsAdminOrTeacherForAttendance]
     
     def get_queryset(self):
-        # --- HARDENED ---
+        # ... (this 'get_queryset' method is already "flawless") ...
         user_type = get_token_claim(self.request, 'user_type')
         user_id = get_token_claim(self.request, 'user_id', 0)
-
         if not user_id:
             return Eattendance.objects.none()
-
         if user_type == 'systemadmin':
             return Eattendance.objects.all()
-
         if user_type == 'teacher':
             class_ids = Subjectteacher.objects.filter(teacherid=user_id).values_list('classesid', flat=True).distinct()
             return Eattendance.objects.filter(classesid__in=class_ids)
-
         if user_type == 'student':
             return Eattendance.objects.filter(studentid=user_id)
-
         if user_type == 'parent':
             student_ids = Student.objects.filter(parentid=user_id).values_list('studentid', flat=True)
             return Eattendance.objects.filter(studentid__in=student_ids)
-
         return Eattendance.objects.none()
+
+    # --- "FLAWLESS" BULK FEATURE (from screenshot image_17d35e.png) ---
+    @action(detail=False, methods=['post'], url_path='bulk-upsert')
+    def bulk_upsert(self, request):
+        """
+        "Flawless" bulk API for Admins/Teachers to submit Exam Attendance
+        for an entire class.
+        This model is NOT a crosstab, so it's a simple update_or_create.
+        """
+        # 1. Get data from the JSON body
+        payload = request.data
+        schoolyear_id = payload.get('schoolyearid')
+        exam_id = payload.get('examid')
+        class_id = payload.get('classesid')
+        section_id = payload.get('sectionid')
+        subject_id = payload.get('subjectid')
+        date = payload.get('date')
+        records = payload.get('records', []) # List of student statuses
+
+        # 2. Validation
+        if not all([schoolyear_id, exam_id, class_id, section_id, subject_id, date, records]):
+            return Response({'error': 'Missing required fields: schoolyearid, examid, classesid, sectionid, subjectid, date, or records.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        errors = []
+
+        # 3. --- Start "Flawless" Transaction ---
+        try:
+            with transaction.atomic():
+                for rec in records:
+                    student_id = rec.get('studentid')
+                    attendance_status = rec.get('status')
+                    
+                    if not all([student_id, attendance_status]):
+                        errors.append(f"Skipped record: missing studentid or status.")
+                        continue
+
+                    # 4. "Flawless" Upsert logic
+                    # This finds a row or creates it
+                    obj, created = Eattendance.objects.update_or_create(
+                        schoolyearid=schoolyear_id,
+                        examid=exam_id,
+                        classesid=class_id,
+                        subjectid=subject_id,
+                        date=date,
+                        studentid=student_id,
+                        defaults={
+                            'sectionid': section_id,
+                            'eattendance': attendance_status, # This is the status field
+                            'year': date.split('-')[0] # Get the year from the date
+                        }
+                    )
+
+        except Exception as e:
+            return Response({'error': f"Transaction failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        # 5. Success!
+        if errors:
+            return Response({'status': 'Partial success', 'errors': errors}, status=status.HTTP_207_MULTI_STATUS)
+        
+        return Response({'status': 'Exam attendance successfully saved'}, status=status.HTTP_200_OK)
 
 
 # --- ACADEMIC MODULE VIEWSETS ---

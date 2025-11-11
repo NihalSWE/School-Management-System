@@ -20,7 +20,7 @@ def make_ci_hash(password):
     if not CI_ENCRYPTION_KEY:
         raise ValueError("CI_ENCRYPTION_KEY in hash_utils.py is not set.")
         
-    salted_password = password + CI_ENCRYPTION_KEY
+    salted_password = str(password) + CI_ENCRYPTION_KEY
     return hashlib.sha512(salted_password.encode('utf-8')).hexdigest()
 
 def check_ci_hash(password, encoded):
@@ -29,7 +29,7 @@ def check_ci_hash(password, encoded):
     'password' is the raw password (e.g., "123")
     'encoded' is the hash from the DB
     """
-    
+    password_str = str(password)
     # 1. Check if it's a Django-style hash (pbkdf2...)
     # We also add a startswith check for safety
     if '$' in encoded and encoded.startswith('pbkdf2_sha256$'):
@@ -37,7 +37,7 @@ def check_ci_hash(password, encoded):
         # We instantiate the specific hasher and call 'verify'
         hasher = PBKDF2PasswordHasher()
         try:
-            return hasher.verify(password, encoded)
+            return hasher.verify(password_str, encoded)
         except:
             # This will catch any errors if the hash is malformed
             return False
@@ -45,6 +45,6 @@ def check_ci_hash(password, encoded):
 
     # 2. If not, assume it's a raw CodeIgniter SHA-512 hash
     try:
-        return make_ci_hash(password) == encoded
+        return make_ci_hash(password_str) == encoded
     except ValueError:
         return False
