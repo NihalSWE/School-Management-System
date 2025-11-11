@@ -49,6 +49,7 @@ router.register(r'userattendance', views.UserattendanceViewSet, basename='userat
 router.register(r'examattendance', views.ExamattendanceViewSet, basename='examattendance')
 router.register(r'subattendance', views.SubAttendanceViewSet, basename='subattendance')
 router.register(r'holidays', views.HolidayViewSet, basename='holiday')
+router.register(r'usertypes', views.UsertypeViewSet, basename='usertype')
 
 
 # --- 5. URLPATTERNS (Updated) ---

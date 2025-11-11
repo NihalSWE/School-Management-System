@@ -286,10 +286,15 @@ class UserSerializer(BaseUserSerializer):
             'create_userid': {'read_only': True},
             'create_username': {'read_only': True},
             'create_usertype': {'read_only': True},
-            'usertypeid': {'read_only': True}, # <-- "Flawless"
+            
+            # --- THIS IS THE FIX ---
+            # 'usertypeid' is no longer read_only.
+            # The Admin (frontend) will provide it from the dropdown.
+            'usertypeid': {'required': True}, 
+            # ---
         }
 
-    # --- "FLAWLESS" FIX ---
+    # --- THIS IS THE MODIFIED, SAFER CREATE METHOD ---
     def create(self, validated_data):
         request = self.context.get('request')
         user_id = get_token_claim(request, 'user_id', 0)
@@ -300,7 +305,9 @@ class UserSerializer(BaseUserSerializer):
         validated_data['create_username'] = username
         validated_data['create_usertype'] = user_type
         
-        validated_data['usertypeid'] = 5  # 5 = Staff (User)
+        # 'usertypeid' is now correctly
+        # provided in the 'validated_data' from the Admin's POST request.
+        # We no longer hard-code it to '5'.
         
         now = timezone.now()
         validated_data['create_date'] = now
@@ -626,6 +633,24 @@ class HolidaySerializer(serializers.ModelSerializer):
             
         return super().create(validated_data)
 
+
+class UsertypeSerializer(AuditBaseSerializer): # <-- 1. INHERIT FROM THE CORRECT BASE
+    """
+    SAFE & NEW: Read-only serializer for the frontend dropdown.
+    NOW "SMART" - handles its own audit fields.
+    """
+    class Meta:
+        model = Usertype
+        fields = '__all__' # <-- 2. Use __all__ to include the audit fields
+        
+        # --- 3. ADD THIS ---
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_username': {'read_only': True},
+            'create_usertype': {'read_only': True},
+        }
 
 # --- 6. TOKEN REFRESH SERIALIZER ---
 

@@ -41,7 +41,8 @@ from .serializers import (
     UserattendanceSerializer, ExamattendanceSerializer,
     RoutineSerializer, SyllabusSerializer, AssignmentSerializer,
     AssignmentanswerSerializer, HolidaySerializer,SubAttendanceSerializer,
-    ExamscheduleSerializer,PromotionlogSerializer
+    ExamscheduleSerializer,PromotionlogSerializer,UsertypeSerializer,
+    
 )
 
 
@@ -1204,7 +1205,26 @@ class HolidayViewSet(viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context.update({"request": self.request})
         return context
-        
+  
+class UsertypeViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Read-only ViewSet for the frontend dropdown.
+    NOW "UNLOCKED" FOR ADMIN TO CREATE/EDIT.
+    """
+    queryset = Usertype.objects.all().order_by('usertypeid')
+    serializer_class = UsertypeSerializer
+    permission_classes = [IsAdminUser] # Only Admin can see/create roles
+
+    # --- ADD THIS METHOD ---
+    def get_serializer_context(self):
+        """
+        Passes the 'request' object to the AuditBaseSerializer
+        so it can find the logged-in Admin's ID.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+      
 # --- TEACHER ASSIGNMENT VIEWSET ---
 
 class SubjectteacherViewSet(viewsets.ModelViewSet):
@@ -1213,3 +1233,5 @@ class SubjectteacherViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminUser] 
     ordering_fields = ['create_date']
     ordering = ['-create_date']
+    
+    
