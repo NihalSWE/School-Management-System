@@ -3,6 +3,7 @@ from django.db import transaction
 from django.http import JsonResponse
 from .models import * 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Max
 from django.utils import timezone
 
 # DRF Imports
@@ -26,7 +27,8 @@ from .permissions import (
     IsAdminOrTeacherForMarks,IsAdminOrTeacherForAttendance,
     IsAdminOrTeacherSelfCreateRead, IsAdminOrStaffSelfCreateRead,
     IsAdminOrTeacherWriteOwner, IsStudentOwnerForAnswer,
-    IsAdminOrTeacherWriteReadOnly,IsAdminOrTeacherOrStudentReadOnly
+    IsAdminOrTeacherWriteReadOnly,IsAdminOrTeacherOrStudentReadOnly,
+    IsConversationParticipant,
 )
 from .jwt_utils import get_tokens_for_user 
 
@@ -42,6 +44,7 @@ from .serializers import (
     RoutineSerializer, SyllabusSerializer, AssignmentSerializer,
     AssignmentanswerSerializer, HolidaySerializer,SubAttendanceSerializer,
     ExamscheduleSerializer,PromotionlogSerializer,UsertypeSerializer,
+    ConversationMsgSerializer,ConversationSerializer,
     
 )
 
@@ -1235,3 +1238,127 @@ class SubjectteacherViewSet(viewsets.ModelViewSet):
     ordering = ['-create_date']
     
     
+#-----------Message-----
+class ConversationViewSet(viewsets.ViewSet):
+    """
+    SAFE & NEW: Handles the Inbox (list) and Compose (create)
+    """
+    permission_classes = [permissions.IsAuthenticated] # From rest_framework
+
+    def list(self, request):
+        # --- INBOX ---
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+        
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        user_type_id = usertypeid_map.get(user_type)
+
+        # 1. Find all conversation IDs this user is part of
+        user_convo_ids = ConversationUser.objects.filter(
+            user_id=user_id,
+            usertypeid=user_type_id
+        ).values_list('conversation_id', flat=True)
+
+        # 2. Get the *first* message (the subject) for those conversations
+        queryset = ConversationMsg.objects.filter(
+            conversation_id__in=user_convo_ids,
+            start=1  # 'start=1' means it's the first message
+        ).order_by('-modify_date')
+
+        serializer = ConversationSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def create(self, request):
+        # --- COMPOSE NEW MESSAGE ---
+        data = request.data
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+
+        # 1. Sender (from token)
+        sender_id = get_token_claim(request, 'user_id', 0)
+        sender_type_str = get_token_claim(request, 'user_type')
+        sender_type_id = usertypeid_map.get(sender_type_str)
+
+        # 2. Receiver (from body)
+        receiver_type_str = data.get('receiver_type') # e.g., 'teacher'
+        receiver_id = data.get('receiver_id')       # e.g., 2
+        receiver_type_id = usertypeid_map.get(receiver_type_str)
+
+        subject = data.get('subject')
+        message = data.get('msg')
+
+        # 3. Validation
+        if not all([receiver_id, receiver_type_str, subject, message, receiver_type_id]):
+            return Response({'error': 'Missing or invalid fields: receiver_id, receiver_type, subject, or msg.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        
+        # 4. Create 3 database entries in one "safe" transaction
+        try:
+            with transaction.atomic():
+                # A. Get a new ID
+                max_id_result = ConversationMsg.objects.aggregate(Max('conversation_id'))
+                max_id = max_id_result['conversation_id__max'] or 0
+                new_convo_id = max_id + 1
+                now = timezone.now()
+
+                # B. Create the Message
+                msg_obj = ConversationMsg.objects.create(
+                    conversation_id=new_convo_id,
+                    user_id=sender_id,
+                    usertypeid=sender_type_id,
+                    subject=subject,
+                    msg=message,
+                    create_date=now,
+                    modify_date=now,
+                    start=1 # This is the "start" message
+                )
+                # C. Link the Sender
+                ConversationUser.objects.create(
+                    conversation_id=new_convo_id,
+                    user_id=sender_id,
+                    usertypeid=sender_type_id,
+                    is_sender=1
+                )
+                # D. Link the Receiver
+                ConversationUser.objects.create(
+                    conversation_id=new_convo_id,
+                    user_id=receiver_id,
+                    usertypeid=receiver_type_id,
+                    is_sender=0
+                )
+                
+                serializer = ConversationMsgSerializer(msg_obj)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({'error': f"Message failed to send: {e}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ConversationMsgViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Handles viewing a conversation (list) and replying (create)
+    """
+    serializer_class = ConversationMsgSerializer
+    permission_classes = [permissions.IsAuthenticated, IsConversationParticipant]
+
+    def get_queryset(self):
+        # --- VIEW A SINGLE CONVERSATION'S REPLIES ---
+        convo_id = self.kwargs.get('convo_id')
+        if not convo_id:
+             return ConversationMsg.objects.none()
+        # Return all messages, oldest first
+        return ConversationMsg.objects.filter(
+            conversation_id=convo_id
+        ).order_by('create_date')
+    
+    def get_serializer_context(self):
+        # Pass the request to the serializer so it knows *who* is replying
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+    def perform_create(self, serializer):
+        # --- SEND A REPLY ---
+        # Get the convo_id from the URL and save it with the reply
+        convo_id = self.kwargs.get('convo_id')
+        serializer.save(conversation_id=convo_id)

@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from .models import *
 from django.utils import timezone
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
 # --- 1. IMPORT OUR "CRASH-PROOF" HELPER ---
@@ -651,6 +652,81 @@ class UsertypeSerializer(AuditBaseSerializer): # <-- 1. INHERIT FROM THE CORRECT
             'create_username': {'read_only': True},
             'create_usertype': {'read_only': True},
         }
+
+
+class ConversationMsgSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for a single message.
+    Used for viewing replies and for the reply action.
+    """
+    sender_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ConversationMsg
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'user_id': {'read_only': True},
+            'usertypeid': {'read_only': True},
+            'conversation_id': {'read_only': True},
+            'start': {'read_only': True},
+        }
+
+    def get_sender_name(self, obj):
+        # Finds the sender's name from the correct table
+        try:
+            if obj.usertypeid == 1:
+                return Systemadmin.objects.get(systemadminid=obj.user_id).name
+            elif obj.usertypeid == 2:
+                return Teacher.objects.get(teacherid=obj.user_id).name
+            elif obj.usertypeid == 3:
+                return Student.objects.get(studentid=obj.user_id).name
+            elif obj.usertypeid == 4:
+                return Parents.objects.get(parentsid=obj.user_id).name
+            elif obj.usertypeid >= 5: # All staff (Accountant, Librarian, etc.)
+                return User.objects.get(userid=obj.user_id).name
+            return "Unknown"
+        except ObjectDoesNotExist:
+            return "Deleted User"
+
+    def create(self, validated_data):
+        # This 'create' is for REPLIES
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+        
+        # Use your existing, working usertype names
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        user_type_id = usertypeid_map.get(user_type)
+
+        validated_data['user_id'] = user_id
+        validated_data['usertypeid'] = user_type_id
+        
+        now = timezone.now()
+        validated_data['create_date'] = now
+        validated_data['modify_date'] = now
+        validated_data['start'] = 0 # Replies are not "start" messages
+        return super().create(validated_data)
+
+
+class ConversationSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for the INBOX list.
+    """
+    last_reply_time = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ConversationMsg
+        fields = ['msg_id', 'conversation_id', 'subject', 'create_date', 'last_reply_time']
+
+    def get_last_reply_time(self, obj):
+        # Finds the timestamp of the very last reply in this conversation
+        last_msg = ConversationMsg.objects.filter(
+            conversation_id=obj.conversation_id
+        ).order_by('-create_date').first()
+        return last_msg.create_date if last_msg else obj.create_date
+
 
 # --- 6. TOKEN REFRESH SERIALIZER ---
 

@@ -50,6 +50,7 @@ router.register(r'examattendance', views.ExamattendanceViewSet, basename='examat
 router.register(r'subattendance', views.SubAttendanceViewSet, basename='subattendance')
 router.register(r'holidays', views.HolidayViewSet, basename='holiday')
 router.register(r'usertypes', views.UsertypeViewSet, basename='usertype')
+router.register(r'conversations', views.ConversationViewSet, basename='conversation')
 
 
 # --- 5. URLPATTERNS (Updated) ---
@@ -60,6 +61,12 @@ urlpatterns = [
     # --- 6. USE OUR NEW CUSTOM REFRESH VIEW ---
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     
+    # --- NEW MESSAGE (REPLY/VIEW) ROUTE ---
+    path(
+        'conversations/msgs/<int:convo_id>/', 
+        views.ConversationMsgViewSet.as_view({'get': 'list', 'post': 'create'}), 
+        name='conversation-msgs'
+    ),
     
     # --- "FLAWLESS" DOCUMENTATION URLS ---
     path('schema/', SpectacularAPIView.as_view(), name='schema'),

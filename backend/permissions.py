@@ -1,6 +1,6 @@
 # In backend/permissions.py
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from .models import Subjectteacher, Student
+from .models import Subjectteacher, Student, ConversationUser
 
 # --- THIS IS THE FIX ---
 # Import our new, safe helper function
@@ -365,3 +365,43 @@ class IsAdminOrTeacherOrStudentReadOnly(BasePermission):
             return request.method in SAFE_METHODS
         
         return False # "Flawlessly" blocks Parents and Staff
+    
+    
+class IsConversationParticipant(BasePermission):
+    """
+    SAFE & NEW:
+    Permission to check if the logged-in user is part of a conversation.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        user_type = get_token_claim(request, 'user_type')
+        user_id = get_token_claim(request, 'user_id', 0)
+        
+        # Get the conversation ID from the URL (e.g., /api/conversations/msgs/1/)
+        conversation_id = view.kwargs.get('convo_id')
+        
+        if not conversation_id:
+            # If there is no ID, it's the Inbox (list) or Compose (create) view
+            return view.action in ['list', 'create']
+            
+        # Use your existing, working usertype names
+        usertypeid_map = {
+            'systemadmin': 1, 
+            'teacher': 2, 
+            'student': 3, 
+            'parent': 4, 
+            'staff': 5
+        }
+        user_type_id = usertypeid_map.get(user_type)
+        
+        if not user_type_id:
+            return False # Block unknown user types
+
+        # Check if this user is linked to this conversation
+        return ConversationUser.objects.filter(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            usertypeid=user_type_id
+        ).exists()
