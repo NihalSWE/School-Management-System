@@ -427,3 +427,57 @@ class IsAdminOrTeacher_Or_StudentReadOnly(BasePermission):
             return request.method in SAFE_METHODS # Students/Parents can only read
             
         return False # All others blocked
+    
+    
+class IsAdminOrTeacher(BasePermission):
+    """
+    SAFE & NEW:
+    - Only Admins and Teachers have full access.
+    - All other roles (Student, Parent, Staff) are blocked.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        user_type = get_token_claim(request, 'user_type')
+        
+        # This uses your existing, working 'user_type' logic
+        return user_type == 'systemadmin' or user_type == 'teacher'
+    
+class IsStudent(BasePermission):
+    """
+    SAFE & NEW:
+    - Only Students have access.
+    - All other roles are blocked.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        user_type = get_token_claim(request, 'user_type')
+        
+        # This uses your existing, working 'user_type' logic
+        return user_type == 'student'
+    
+    
+class IsAdminOrStudentReadOnly(BasePermission):
+    """
+    SAFE & NEW:
+    - Admin: Full access (GET, POST, PUT, DELETE).
+    - Student: Read-Only access (GET).
+    - Teacher, Parent, Staff: Blocked.
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+            
+        user_type = get_token_claim(request, 'user_type')
+        
+        if user_type == 'systemadmin':
+            return True # Full access
+            
+        if user_type == 'student':
+            return request.method in SAFE_METHODS # Read-only
+            
+        # Teachers, Parents, and Staff are blocked
+        return False

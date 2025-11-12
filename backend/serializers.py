@@ -728,17 +728,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         return last_msg.create_date if last_msg else obj.create_date
 
 
-# --- 6. TOKEN REFRESH SERIALIZER ---
 
-class CustomTokenRefreshSerializer(TokenRefreshSerializer):
-    """
-    This custom serializer refreshes a token without
-    checking the database (Token Blacklisting).
-    """
-    def validate(self, attrs):
-        # This skips the database check for a blacklisted token.
-        # It only validates the token's signature and expiry.
-        return super(TokenRefreshSerializer, self).validate(attrs)
     
     
 class MediaCategorySerializer(serializers.ModelSerializer):
@@ -794,3 +784,276 @@ class MediaSerializer(serializers.ModelSerializer):
         validated_data['usertypeid'] = user_type_id
         
         return super().create(validated_data)
+    
+#-----online exam-------
+
+class QuestionGroupSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for Question Groups.
+    """
+    class Meta:
+        model = QuestionGroup
+        fields = '__all__'
+
+class QuestionLevelSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for Question Levels.
+    """
+    class Meta:
+        model = QuestionLevel
+        fields = '__all__'
+
+class InstructionSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for Exam Instructions.
+    """
+    class Meta:
+        model = Instruction
+        fields = '__all__'
+        
+class QuestionBankSerializer(serializers.ModelSerializer):
+    """
+    SAFE & CORRECTED: "Smart" serializer for the Question Bank.
+    This serializer correctly provides the numeric IDs for audit fields.
+    """
+    class Meta:
+        model = QuestionBank
+        fields = '__all__'
+        extra_kwargs = {
+            # Mark audit fields as read-only (we fill them in 'create')
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_usertypeid': {'read_only': True},
+        }
+
+    # --- 2. ADD THIS "SMART" CREATE METHOD ---
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+        
+        # This uses your existing, working logic to get the correct numeric ID
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        user_type_id = usertypeid_map.get(user_type)
+
+        # Fill in the *correct* fields for the QuestionBank model
+        validated_data['create_userid'] = user_id
+        validated_data['create_usertypeid'] = user_type_id
+        
+        now = timezone.now()
+        validated_data['create_date'] = now
+        validated_data['modify_date'] = now
+        
+        return super().create(validated_data)
+        
+
+class OnlineExamTypeSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for the "Exam Type" dropdown.
+    """
+    class Meta:
+        model = OnlineExamType
+        fields = '__all__'
+
+
+class OnlineExamSerializer(serializers.ModelSerializer):
+    """
+    SAFE & CORRECTED: "Smart" serializer for the Online Exam.
+    This serializer correctly provides the numeric IDs for audit fields.
+    """
+    class Meta:
+        model = OnlineExam
+        fields = '__all__'
+        extra_kwargs = {
+            # Mark audit fields as read-only (we fill them in 'create')
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_usertypeid': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type = get_token_claim(request, 'user_type')
+        
+        # This uses your existing, working logic to get the correct numeric ID
+        usertypeid_map = {'systemadmin': 1, 'teacher': 2, 'student': 3, 'parent': 4, 'staff': 5}
+        user_type_id = usertypeid_map.get(user_type)
+
+        # Fill in the *correct* fields for the OnlineExam model
+        validated_data['create_userid'] = user_id
+        validated_data['create_usertypeid'] = user_type_id
+        
+        now = timezone.now()
+        validated_data['create_date'] = now
+        validated_data['modify_date'] = now
+        
+        return super().create(validated_data)
+
+class QuestionOptionSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for the options on a question.
+    """
+    class Meta:
+        model = QuestionOption
+        fields = ['optionid', 'name', 'img'] # Student only sees these fields
+
+class QuestionBankDetailsSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: "Smart" serializer for a single question in an exam.
+    This "nests" the options inside the question.
+    """
+    # This 'options' field will find all QuestionOption objects
+    # linked to this QuestionBank's 'questionbankid'
+    options = QuestionOptionSerializer(many=True, read_only=True, source='questionoption_set')
+
+    class Meta:
+        model = QuestionBank
+        fields = [
+            'questionbankid', 
+            'question', 
+            'levelid', 
+            'groupid', 
+            'typenumber', 
+            'mark', 
+            'upload',
+            'options' # This is the new nested field
+        ]
+        
+class OnlineExamQuestionSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for linking a Question to an Exam.
+    """
+    class Meta:
+        model = OnlineExamQuestion
+        fields = '__all__'
+        
+class OnlineExamUserAnswerOptionSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for a single answer submitted by a student.
+    """
+    class Meta:
+        model = OnlineExamUserAnswerOption
+        # These are the fields the student will send
+        fields = ['questionid', 'optionid', 'typeid', 'text']
+        extra_kwargs = {
+            # Make optionid and text optional (for different question types)
+            'optionid': {'required': False, 'allow_null': True},
+            'text': {'required': False, 'allow_blank': True},
+        }
+
+class OnlineExamUserStatusSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for the final exam summary/result.
+    """
+    class Meta:
+        model = OnlineExamUserStatus
+        fields = '__all__'
+        
+        
+class TransportSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for the Transport (Routes).
+    """
+    class Meta:
+        model = Transport
+        fields = '__all__'
+
+
+class TmemberSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: "Smart" serializer for the Transport Members.
+    """
+    class Meta:
+        model = Tmember
+        fields = '__all__'
+        extra_kwargs = {
+            # These fields are copied from the Student, so they are read-only
+            'name': {'read_only': True},
+            'email': {'read_only': True},
+            'phone': {'read_only': True},
+            'tjoindate': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        """
+        This is the "smart" part.
+        We get the studentid, find the student, and copy their data.
+        """
+        # 1. Get the Student object
+        student_id = validated_data.get('studentid')
+        try:
+            student = Student.objects.get(studentid=student_id)
+        except Student.DoesNotExist:
+            raise serializers.ValidationError(f"Student with ID {student_id} not found.")
+
+        # 2. Fill in the required copied fields
+        validated_data['name'] = student.name
+        validated_data['email'] = student.email
+        validated_data['phone'] = student.phone
+        validated_data['tjoindate'] = timezone.now().date()
+        
+        # 3. Set tbalance to a safe default if not provided (e.g., '0')
+        if 'tbalance' not in validated_data:
+            validated_data['tbalance'] = '0'
+
+        return super().create(validated_data)
+      
+
+class HostelSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for the Hostel list.
+    """
+    class Meta:
+        model = Hostel
+        fields = '__all__'
+
+class CategorySerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Serializer for the Hostel Category list.
+    """
+    class Meta:
+        model = Category
+        fields = '__all__'
+
+
+class HmemberSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: "Smart" serializer for the Hostel Members.
+    """
+    class Meta:
+        model = Hmember
+        fields = '__all__'
+        extra_kwargs = {
+            # These fields are handled by the 'create' method
+            'hjoindate': {'read_only': True},
+            'hbalance': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        """
+        This is the "smart" part.
+        We auto-fill the join date and default balance.
+        """
+        # 1. Fill in the required fields
+        validated_data['hjoindate'] = timezone.now().date()
+        
+        # 2. Set hbalance to a safe default if not provided
+        if 'hbalance' not in validated_data:
+            validated_data['hbalance'] = '0'
+
+        return super().create(validated_data)      
+        
+# ---  TOKEN REFRESH SERIALIZER ---
+
+class CustomTokenRefreshSerializer(TokenRefreshSerializer):
+    """
+    This custom serializer refreshes a token without
+    checking the database (Token Blacklisting).
+    """
+    def validate(self, attrs):
+        # This skips the database check for a blacklisted token.
+        # It only validates the token's signature and expiry.
+        return super(TokenRefreshSerializer, self).validate(attrs)

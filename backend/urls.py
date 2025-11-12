@@ -53,6 +53,18 @@ router.register(r'usertypes', views.UsertypeViewSet, basename='usertype')
 router.register(r'conversations', views.ConversationViewSet, basename='conversation')
 router.register(r'media-folders', views.MediaCategoryViewSet, basename='media-category')
 router.register(r'media-files', views.MediaViewSet, basename='media-file')
+router.register(r'question-groups', views.QuestionGroupViewSet, basename='question-group')
+router.register(r'question-levels', views.QuestionLevelViewSet, basename='question-level')
+router.register(r'instructions', views.InstructionViewSet, basename='instruction')
+router.register(r'question-bank', views.QuestionBankViewSet, basename='question-bank')
+router.register(r'online-exam-types', views.OnlineExamTypeViewSet, basename='online-exam-type')
+router.register(r'online-exams', views.OnlineExamViewSet, basename='online-exam')
+router.register(r'online-exam-questions', views.OnlineExamQuestionViewSet, basename='online-exam-question')
+router.register(r'transport-routes', views.TransportViewSet, basename='transport-route')
+router.register(r'transport-members', views.TmemberViewSet, basename='transport-member')
+router.register(r'hostels', views.HostelViewSet, basename='hostel')
+router.register(r'hostel-categories', views.CategoryViewSet, basename='hostel-category')
+router.register(r'hostel-members', views.HmemberViewSet, basename='hostel-member')
 
 
 # --- 5. URLPATTERNS (Updated) ---

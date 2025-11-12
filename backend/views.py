@@ -28,7 +28,8 @@ from .permissions import (
     IsAdminOrTeacherSelfCreateRead, IsAdminOrStaffSelfCreateRead,
     IsAdminOrTeacherWriteOwner, IsStudentOwnerForAnswer,
     IsAdminOrTeacherWriteReadOnly,IsAdminOrTeacherOrStudentReadOnly,
-    IsConversationParticipant,IsAdminOrTeacher_Or_StudentReadOnly
+    IsConversationParticipant,IsAdminOrTeacher_Or_StudentReadOnly,
+    IsAdminOrTeacher,IsStudent,IsAdminOrStudentReadOnly,
 )
 from .jwt_utils import get_tokens_for_user 
 
@@ -45,7 +46,12 @@ from .serializers import (
     AssignmentanswerSerializer, HolidaySerializer,SubAttendanceSerializer,
     ExamscheduleSerializer,PromotionlogSerializer,UsertypeSerializer,
     ConversationMsgSerializer,ConversationSerializer,MediaCategorySerializer,
-    MediaSerializer
+    MediaSerializer,QuestionGroupSerializer,QuestionLevelSerializer,
+    InstructionSerializer,QuestionBankSerializer,OnlineExamTypeSerializer,
+    OnlineExamSerializer,QuestionOptionSerializer,QuestionBankDetailsSerializer,
+    OnlineExamQuestionSerializer,OnlineExamUserAnswerOptionSerializer,
+    OnlineExamUserStatusSerializer,TransportSerializer,TmemberSerializer,
+    HostelSerializer,CategorySerializer,HmemberSerializer,
     
 )
 
@@ -1486,3 +1492,339 @@ class MediaViewSet(viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context.update({"request": self.request})
         return context
+    
+    
+# --- ONLINE EXAM (PART 1: SETUP MODULES) ---
+
+class QuestionGroupViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Question Groups (Admin/Teacher only)
+    """
+    queryset = QuestionGroup.objects.all().order_by('questiongroupid')
+    serializer_class = QuestionGroupSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher]
+
+class QuestionLevelViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Question Levels (Admin/Teacher only)
+    """
+    queryset = QuestionLevel.objects.all().order_by('questionlevelid')
+    serializer_class = QuestionLevelSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher]
+
+class InstructionViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Exam Instructions (Admin/Teacher only)
+    """
+    queryset = Instruction.objects.all().order_by('instructionid')
+    serializer_class = InstructionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher]
+    
+    
+class QuestionBankViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Question Bank (Admin/Teacher only)
+    """
+    queryset = QuestionBank.objects.all().order_by('-questionbankid')
+    serializer_class = QuestionBankSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher]
+
+    def get_serializer_context(self):
+        """
+        Passes the 'request' object to the AuditBaseSerializer
+        so it can find the logged-in Admin's/Teacher's ID.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+    
+
+class OnlineExamTypeViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Exam Type dropdown (Admin/Teacher only)
+    """
+    queryset = OnlineExamType.objects.all().order_by('onlineexamtypeid')
+    serializer_class = OnlineExamTypeSerializer
+    # We reuse the permission we already tested
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher]
+
+class OnlineExamViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Online Exams
+    - Admin/Teacher: Full access
+    - Student: Read-only (for "Take Exam" list)
+    """
+    queryset = OnlineExam.objects.all().order_by('-onlineexamid')
+    serializer_class = OnlineExamSerializer
+    # We reuse the permission from the Media module, it has the correct logic
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher_Or_StudentReadOnly]
+
+    def get_queryset(self):
+        # This is the SAFE logic
+        user = self.request.user
+        user_id = get_token_claim(self.request, 'user_id', 0)
+        user_type = get_token_claim(self.request, 'user_type')
+
+        if user_type == 'systemadmin' or user_type == 'teacher':
+            # Admins and Teachers see all online exams
+            return self.queryset
+        
+        elif user_type == 'student':
+            # Students only see "Published" exams for their class
+            try:
+                student = Student.objects.get(studentid=user_id)
+                return self.queryset.filter(
+                    published=1, 
+                    classid=student.classesid_id
+                )
+            except Student.DoesNotExist:
+                return self.queryset.none() # Block if student not found
+        
+        # Parents and Staff see nothing
+        return self.queryset.none()
+
+    def get_serializer_context(self):
+        """
+        Passes the 'request' object to the OnlineExamSerializer
+        so it can find the logged-in Admin's/Teacher's ID.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context  
+    
+    # --- THIS IS THE NEW "TAKE EXAM" FUNCTION ---
+    @action(detail=True, methods=['get'], url_path='questions', permission_classes=[IsStudent])
+    def get_questions(self, request, pk=None):
+        """
+        SAFE & NEW: This is the "Take Exam" API.
+        It gets all questions and options for a specific exam.
+        'pk' is the 'onlineexamid'.
+        """
+        try:
+            # 1. Get the exam the student wants to take
+            online_exam = self.get_object()
+
+            # 2. Find all 'questionbankid's linked to this exam
+            # We use the 'OnlineExamQuestion' join table
+            question_ids = OnlineExamQuestion.objects.filter(
+                onlineexamid=online_exam.onlineexamid
+            ).values_list('questionid', flat=True)
+
+            # 3. Get the actual QuestionBank objects for those IDs
+            questions = QuestionBank.objects.filter(questionbankid__in=question_ids)
+
+            # 4. Serialize the questions (this will include their options)
+            serializer = QuestionBankDetailsSerializer(questions, many=True)
+            return Response(serializer.data)
+
+        except Exception as e:
+            return Response(
+                {'error': f'Could not load exam questions: {e}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )  
+            
+    @action(detail=True, methods=['post'], url_path='submit-answers', permission_classes=[IsStudent])
+    def submit_answers(self, request, pk=None):
+        """
+        SAFE & NEW: This is the "Submit Exam" API.
+        A student sends a list of their answers.
+        'pk' is the 'onlineexamid'.
+        """
+        # 1. Get key information
+        online_exam_id = pk
+        student_id = get_token_claim(request, 'user_id', 0)
+        answers_data = request.data # This should be a list of answers
+        
+        if not isinstance(answers_data, list):
+            return Response(
+                {'error': 'Invalid data format. Expected a list of answers.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 2. Generate a unique ID for this exam "attempt"
+        # We use the current timestamp as a simple unique ID
+        exam_attempt_id = int(timezone.now().timestamp())
+        now = timezone.now()
+
+        # 3. Use a "try/except" block to keep our server safe
+        try:
+            with transaction.atomic(): # This ensures all or nothing
+                
+                # 4. Create the list of answer objects to be saved
+                answer_objects_to_create = []
+                for answer in answers_data:
+                    # Validate the data for this one answer
+                    serializer = OnlineExamUserAnswerOptionSerializer(data=answer)
+                    if not serializer.is_valid():
+                        raise Exception(f"Invalid answer data: {serializer.errors}")
+                    
+                    answer_objects_to_create.append(
+                        OnlineExamUserAnswerOption(
+                            questionid=answer.get('questionid'),
+                            optionid=answer.get('optionid'),
+                            typeid=answer.get('typeid'),
+                            text=answer.get('text'),
+                            # --- Fill in all the "magic" fields ---
+                            time=now,
+                            onlineexamid=online_exam_id,
+                            examtimeid=exam_attempt_id,
+                            userid=student_id
+                        )
+                    )
+                
+                # 5. Save all answers to the database in one efficient query
+                OnlineExamUserAnswerOption.objects.bulk_create(answer_objects_to_create)
+
+                # 6. Create the "Summary" record
+                # We don't know the score yet (needs grading), so we set defaults
+                total_answered = len([
+                    a for a in answers_data 
+                    if a.get('optionid') is not None or a.get('text')
+                ])
+                
+                status_summary = OnlineExamUserStatus.objects.create(
+                    onlineexamid=online_exam_id,
+                    userid=student_id,
+                    examtimeid=exam_attempt_id,
+                    time=now,
+                    statusid=0, # 0 = "Pending Review"
+                    score=0,
+                    totalquestion=len(answers_data),
+                    totalanswer=total_answered,
+                    # --- Fill in other required fields with defaults ---
+                    duration=0, 
+                    nagetivemark=0, 
+                )
+            
+            # 7. Success! Return the summary to the student.
+            summary_serializer = OnlineExamUserStatusSerializer(status_summary)
+            return Response(summary_serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            # Something went wrong, return an error
+            return Response(
+                {'error': f'Could not submit exam: {e}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+class OnlineExamQuestionViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for adding/removing questions from an exam.
+    (Admin/Teacher only)
+    """
+    queryset = OnlineExamQuestion.objects.all()
+    serializer_class = OnlineExamQuestionSerializer
+    # We reuse the permission we already tested and know is safe
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrTeacher]
+    
+#---------Transport-----------    
+class TransportViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Transport Routes.
+    - Admin: Full Access
+    - Student: Read-Only
+    - Teacher/Others: Blocked
+    """
+    queryset = Transport.objects.all().order_by('transportid')
+    serializer_class = TransportSerializer
+    # This uses our new, 100% correct permission
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrStudentReadOnly]
+
+
+class TmemberViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Transport Members.
+    - Admin: Full Access
+    - All others: Blocked
+    """
+    queryset = Tmember.objects.all().order_by('tmemberid')
+    serializer_class = TmemberSerializer
+    # This is 100% safe, only Admins can manage members
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_serializer_context(self):
+        """
+        Passes the 'request' object to the TmemberSerializer
+        so it can find the student data.
+        """
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+    def get_queryset(self):
+        """
+        This allows the Admin to filter the member list by class
+        (as seen in image_72009f.png).
+        """
+        queryset = super().get_queryset()
+        
+        # Check if the Admin provided a 'class_id' in the URL
+        # e.g., GET /api/tmembers/?class_id=6
+        class_id = self.request.query_params.get('class_id')
+        
+        if class_id:
+            # Find all student IDs that belong to that class
+            student_ids_in_class = Student.objects.filter(classesid=class_id).values_list('studentid', flat=True)
+            # Filter the Tmember list to only those students
+            queryset = queryset.filter(studentid__in=student_ids_in_class)
+            
+        return queryset
+    
+    
+# --- HOSTEL MODULE (SAFE & NEW) ---
+
+class HostelViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Hostel list.
+    - Admin: Full Access
+    - Student/Teacher: Read-Only
+    """
+    queryset = Hostel.objects.all().order_by('hostelid')
+    serializer_class = HostelSerializer
+    # We reuse our existing, 100% safe permission
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
+
+
+class CategoryViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Hostel Categories.
+    - Admin: Full Access
+    - Student/Teacher: Read-Only
+    """
+    queryset = Category.objects.all().order_by('categoryid')
+    serializer_class = CategorySerializer
+    # We reuse our existing, 100% safe permission
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
+
+
+class HmemberViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Hostel Members.
+    - Admin: Full Access
+    - All others: Blocked
+    """
+    queryset = Hmember.objects.all().order_by('hmemberid')
+    serializer_class = HmemberSerializer
+    # This is 100% safe, only Admins can manage members
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_queryset(self):
+        """
+        This allows the Admin to filter the member list by class
+        (as seen in image_72ed5c.png).
+        
+        This is the *exact same* safe logic as the TmemberViewSet.
+        """
+        queryset = super().get_queryset()
+        
+        # Check if the Admin provided a 'class_id' in the URL
+        # e.g., GET /api/hmembers/?class_id=6
+        class_id = self.request.query_params.get('class_id')
+        
+        if class_id:
+            # Find all student IDs that belong to that class
+            student_ids_in_class = Student.objects.filter(classesid=class_id).values_list('studentid', flat=True)
+            # Filter the Hmember list to only those students
+            queryset = queryset.filter(studentid__in=student_ids_in_class)
+            
+        return queryset
