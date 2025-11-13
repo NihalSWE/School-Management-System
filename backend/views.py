@@ -51,7 +51,15 @@ from .serializers import (
     OnlineExamSerializer,QuestionOptionSerializer,QuestionBankDetailsSerializer,
     OnlineExamQuestionSerializer,OnlineExamUserAnswerOptionSerializer,
     OnlineExamUserStatusSerializer,TransportSerializer,TmemberSerializer,
-    HostelSerializer,CategorySerializer,HmemberSerializer,
+    HostelSerializer,CategorySerializer,HmemberSerializer,SalaryTemplateSerializer, 
+    SalaryOptionSerializer,HourlyTemplateSerializer,ManageSalarySerializer,   
+    MakePaymentSerializer,OvertimeSerializer,NumericAuditBaseSerializer, 
+    VendorSerializer,LocationSerializer,AssetCategorySerializer,AssetSerializer,           
+    PurchaseSerializer,AssetAssignmentSerializer,DateTimeAuditBaseSerializer,   
+    ProductcategorySerializer,ProductSerializer,ProductsupplierSerializer,       
+    ProductwarehouseSerializer,ProductpurchaseSerializer,ProductpurchaseitemSerializer,   
+    ProductpurchasepaidSerializer,ProductsaleSerializer,ProductsaleitemSerializer,       
+    ProductsalepaidSerializer  
     
 )
 
@@ -1828,3 +1836,276 @@ class HmemberViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(studentid__in=student_ids_in_class)
             
         return queryset
+    
+    
+# --- PAYROLL MODULE (SAFE & NEW - ADMIN ONLY) ---
+
+class SalaryTemplateViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Salary Templates (Admin-only)
+    """
+    queryset = SalaryTemplate.objects.all().order_by('salary_templateid')
+    serializer_class = SalaryTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+class SalaryOptionViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Salary Options (Admin-only)
+    """
+    queryset = SalaryOption.objects.all().order_by('salary_optionid')
+    serializer_class = SalaryOptionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+class HourlyTemplateViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Hourly Templates (Admin-only)
+    """
+    queryset = HourlyTemplate.objects.all().order_by('hourly_templateid')
+    serializer_class = HourlyTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+class ManageSalaryViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Manage Salary (Admin-only)
+    """
+    queryset = ManageSalary.objects.all().order_by('manage_salaryid')
+    serializer_class = ManageSalarySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_serializer_context(self):
+        # Passes request to AuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class MakePaymentViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Make Payment (Admin-only)
+    """
+    queryset = MakePayment.objects.all().order_by('make_paymentid')
+    serializer_class = MakePaymentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_serializer_context(self):
+        # Passes request to AuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class OvertimeViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Overtime (Admin-only)
+    """
+    queryset = Overtime.objects.all().order_by('date')
+    serializer_class = OvertimeSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_serializer_context(self):
+        # Passes request to the "smart" create() method
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+    
+    
+# --- ASSET MODULE (SAFE & NEW - ADMIN ONLY) ---
+
+class VendorViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Vendors (Admin-only)
+    """
+    queryset = Vendor.objects.all().order_by('vendorid')
+    serializer_class = VendorSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+class LocationViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Locations (Admin-only)
+    """
+    queryset = Location.objects.all().order_by('locationid')
+    serializer_class = LocationSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        # "Flawlessly" (and 100% *correctly*) passes request to NumericAuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class AssetCategoryViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Asset Categories (Admin-only)
+    """
+    queryset = AssetCategory.objects.all().order_by('asset_categoryid')
+    serializer_class = AssetCategorySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        # "Flawlessly" (and 100% *correctly*) passes request to NumericAuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class AssetViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Assets (Admin-only)
+    """
+    queryset = Asset.objects.all().order_by('assetid')
+    serializer_class = AssetSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        # "Flawlessly" (and 100% *correctly*) passes request to NumericAuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class PurchaseViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Purchases (Admin-only)
+    """
+    queryset = Purchase.objects.all().order_by('purchaseid')
+    serializer_class = PurchaseSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        # "Flawlessly" (and 100% *correctly*) passes request to NumericAuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class AssetAssignmentViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Asset Assignments (Admin-only)
+    """
+    queryset = AssetAssignment.objects.all().order_by('asset_assignmentid')
+    serializer_class = AssetAssignmentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safes
+    def get_serializer_context(self):
+        # "Flawlessly" (and 100% *correctly*) passes request to NumericAuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+    
+    
+# --- INVENTORY MODULE  ---
+
+class ProductcategoryViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Category (Admin-only)
+    """
+    queryset = Productcategory.objects.all().order_by('productcategoryid')
+    serializer_class = ProductcategorySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        # "Flawlessly" (and 100% *correctly*) passes request to DateTimeAuditBaseSerializer
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ProductViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product (Admin-only)
+    """
+    queryset = Product.objects.all().order_by('productid')
+    serializer_class = ProductSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ProductsupplierViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Supplier (Admin-only)
+    """
+    queryset = Productsupplier.objects.all().order_by('productsupplierid')
+    serializer_class = ProductsupplierSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ProductwarehouseViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Warehouse (Admin-only)
+    """
+    queryset = Productwarehouse.objects.all().order_by('productwarehouseid')
+    serializer_class = ProductwarehouseSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ProductpurchaseViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Purchase (Admin-only)
+    """
+    queryset = Productpurchase.objects.all().order_by('productpurchaseid')
+    serializer_class = ProductpurchaseSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ProductpurchaseitemViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Purchase Item (Admin-only)
+    """
+    queryset = Productpurchaseitem.objects.all().order_by('productpurchaseitemid')
+    serializer_class = ProductpurchaseitemSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+class ProductpurchasepaidViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Purchase Paid (Admin-only)
+    """
+    queryset = Productpurchasepaid.objects.all().order_by('productpurchasepaidid')
+    serializer_class = ProductpurchasepaidSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ProductsaleViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Sale (Admin-only)
+    """
+    queryset = Productsale.objects.all().order_by('productsaleid')
+    serializer_class = ProductsaleSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class ProductsaleitemViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Sale Item (Admin-only)
+    """
+    queryset = Productsaleitem.objects.all().order_by('productsaleitemid')
+    serializer_class = ProductsaleitemSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+class ProductsalepaidViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: API for Product Sale Paid (Admin-only)
+    """
+    queryset = Productsalepaid.objects.all().order_by('productsalepaidid')
+    serializer_class = ProductsalepaidSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser] # 100% Safe
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
