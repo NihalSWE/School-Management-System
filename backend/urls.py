@@ -87,6 +87,19 @@ router.register(r'product-purchase-paid', views.ProductpurchasepaidViewSet, base
 router.register(r'product-sales', views.ProductsaleViewSet, basename='product-sale')
 router.register(r'product-sale-items', views.ProductsaleitemViewSet, basename='product-sale-item')
 router.register(r'product-sale-paid', views.ProductsalepaidViewSet, basename='product-sale-paid')
+router.register(r'leave-categories', views.LeavecategoryViewSet, basename='leave-category')
+router.register(r'leave-assigns', views.LeaveassignViewSet, basename='leave-assign')
+router.register(r'leave-applications', views.LeaveapplicationsViewSet, basename='leave-application')
+router.register(r'activities-categories', views.ActivitiescategoryViewSet, basename='activities-category')
+router.register(r'activities', views.ActivitiesViewSet, basename='activities')
+router.register(r'childcare', views.ChildcareViewSet, basename='childcare')
+router.register(r'books', views.BookViewSet, basename='book')
+router.register(r'ebooks', views.EbooksViewSet, basename='ebook')
+router.register(r'library-members', views.LmemberViewSet, basename='library-member')
+router.register(r'book-issues', views.IssueViewSet, basename='book-issue')
+router.register(r'sponsors', views.SponsorViewSet, basename='sponsor')
+router.register(r'candidates', views.CandidateViewSet, basename='candidate')
+router.register(r'sponsorships', views.SponsorshipViewSet, basename='sponsorship')
 
 
 # --- 5. URLPATTERNS (Updated) ---
