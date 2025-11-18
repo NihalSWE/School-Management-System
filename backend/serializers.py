@@ -434,6 +434,45 @@ class SectionSerializer(AuditBaseSerializer):
             'create_username': {'read_only': True},
             'create_usertype': {'read_only': True},
         }
+        
+    def validate(self, data):
+        """
+        This is the new validation to prevent duplicates.
+        It checks if a section with this name already exists for this class.
+        """
+        # Get the incoming data
+        # Note: 'classesid' will be a 'Classes' object, not just an ID
+        section_name = data.get('section')
+        class_obj = data.get('classesid')
+
+        # 'self.instance' is the existing object on an UPDATE (PUT/PATCH)
+        # 'self.instance' is None on a CREATE (POST)
+        
+        # If the data isn't in the request, use the existing instance data
+        if not section_name:
+            section_name = self.instance.section
+        if not class_obj:
+            class_obj = self.instance.classesid
+
+        # Build the query
+        query = Section.objects.filter(
+            classesid=class_obj, 
+            section=section_name
+        )
+
+        if self.instance:
+            # If this is an UPDATE, we must exclude our *own* object
+            # from the check.
+            query = query.exclude(pk=self.instance.pk)
+
+        if query.exists():
+            # If a duplicate is found, raise a validation error.
+            raise serializers.ValidationError(
+                f"The section '{section_name}' already exists for this class."
+            )
+        
+        # If no error, return the validated data
+        return data
 
 class SubjectSerializer(AuditBaseSerializer):
     class Meta:
