@@ -112,6 +112,9 @@ router.register(r'holidays', views.HolidayViewSet, basename='holiday')
 router.register(r'online-admissions', views.OnlineadmissionViewSet, basename='online-admission')
 router.register(r'public-admission', views.PublicOnlineadmissionViewSet, basename='public-admission')
 router.register(r'visitor-info', views.VisitorinfoViewSet, basename='visitor-info')
+router.register(r'mail-sms-tags', views.MailandsmstemplatetagViewSet, basename='mail-sms-tag')
+router.register(r'mail-sms-templates', views.MailandsmstemplateViewSet, basename='mail-sms-template')
+router.register(r'mail-sms-history', views.MailandsmsViewSet, basename='mail-sms-history')
 
 
 # --- 5. URLPATTERNS (Updated) ---

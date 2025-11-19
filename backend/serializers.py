@@ -528,6 +528,78 @@ class MarkrelationSerializer(serializers.ModelSerializer):
         model = Markrelation
         fields = '__all__'
 
+
+# --- MAIL / SMS MODULE ---
+
+class MailandsmstemplatetagSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Read-only list of available tags (e.g. [name], [email])
+    """
+    class Meta:
+        model = Mailandsmstemplatetag
+        fields = '__all__'
+
+
+class MailandsmstemplateSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: CRUD for Email/SMS Templates.
+    """
+    class Meta:
+        model = Mailandsmstemplate
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        # Auto-set the creation date
+        validated_data['create_date'] = timezone.now()
+        return super().create(validated_data)
+
+
+class MailandsmsSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: The Log/History of sent messages.
+    This handles the 'Send' action.
+    """
+    class Meta:
+        model = Mailandsms
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'senderusertypeid': {'read_only': True},
+            'senderid': {'read_only': True},
+            
+            # "Smart Year Logic": We allow the frontend to send it (for Students),
+            # but we don't force it (for Teachers).
+            'year': {'required': False}, 
+        }
+
+    def create(self, validated_data):
+        """
+        Smart Create: Automatically captures WHO is sending (Admin) and WHEN.
+        """
+        request = self.context.get('request')
+        
+        # 1. Capture the Sender (Admin)
+        user_id = get_token_claim(request, 'user_id', 0)
+        user_type_id = 1  # System Admin
+        
+        # 2. Set Audit Fields
+        validated_data['senderid'] = user_id
+        validated_data['senderusertypeid'] = user_type_id
+        validated_data['create_date'] = timezone.now()
+
+        # 3. "Smart Year Logic"
+        # If the frontend sent a year (e.g., "2023" for Students), we keep it.
+        # If NOT (e.g., for Teachers), we auto-fill the current year (e.g., "2025").
+        if 'year' not in validated_data:
+            validated_data['year'] = timezone.now().strftime('%Y')
+        
+        return super().create(validated_data)
+
+
+
 # --- 5. "SMART" SERIALIZERS ---
 # (These have their own audit fields and are now "hardened")
 

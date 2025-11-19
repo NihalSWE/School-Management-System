@@ -69,7 +69,8 @@ from .serializers import (
     ChildcareSerializer,BookSerializer,EbooksSerializer,IssueSerializer,LmemberSerializer,
     SponsorSerializer,CandidateSerializer,SponsorshipSerializer,FeetypesSerializer,ExpenseSerializer,     
     IncomeSerializer,MaininvoiceSerializer,InvoiceSerializer,PaymentSerializer,GlobalpaymentSerializer,
-    NoticeSerializer,EventSerializer,OnlineadmissionSerializer,VisitorinfoSerializer,
+    NoticeSerializer,EventSerializer,OnlineadmissionSerializer,VisitorinfoSerializer,MailandsmstemplatetagSerializer, 
+    MailandsmstemplateSerializer,MailandsmsSerializer
     
      
     
@@ -2664,4 +2665,39 @@ class VisitorinfoViewSet(viewsets.ModelViewSet):
         visitor.save()
         
         serializer = self.get_serializer(visitor)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data, status=status.HTTP_200_OK)\
+            
+            
+            
+# --- MAIL / SMS MODULE  ---
+
+class MailandsmstemplatetagViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    SAFE & NEW: Helper API to list tags like [name], [email].
+    """
+    queryset = Mailandsmstemplatetag.objects.all().order_by('mailandsmstemplatetagid')
+    serializer_class = MailandsmstemplatetagSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+
+class MailandsmstemplateViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Manage Templates (Create, Edit, Delete).
+    """
+    queryset = Mailandsmstemplate.objects.all().order_by('-mailandsmstemplateid')
+    serializer_class = MailandsmstemplateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+
+class MailandsmsViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Message History & Sending Log.
+    """
+    queryset = Mailandsms.objects.all().order_by('-mailandsmsid')
+    serializer_class = MailandsmsSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
