@@ -115,6 +115,17 @@ router.register(r'visitor-info', views.VisitorinfoViewSet, basename='visitor-inf
 router.register(r'mail-sms-tags', views.MailandsmstemplatetagViewSet, basename='mail-sms-tag')
 router.register(r'mail-sms-templates', views.MailandsmstemplateViewSet, basename='mail-sms-template')
 router.register(r'mail-sms-history', views.MailandsmsViewSet, basename='mail-sms-history')
+router.register(r'schoolyears', views.SchoolyearViewSet, basename='schoolyear')
+router.register(r'studentgroups', views.StudentgroupViewSet, basename='studentgroup')
+router.register(r'complains', views.ComplainViewSet, basename='complain')
+router.register(r'certificate-templates', views.CertificateTemplateViewSet, basename='certificate-template')
+router.register(r'sociallinks', views.SociallinkViewSet, basename='sociallink')
+router.register(r'permissions', views.PermissionsViewSet, basename='permission')
+router.register(r'addons', views.AddonsViewSet, basename='addon')
+router.register(r'updates', views.UpdateViewSet, basename='update')
+router.register(r'frontend-pages', views.PagesViewSet, basename='frontend-page')
+router.register(r'frontend-categories', views.PostsCategoriesViewSet, basename='frontend-category')
+router.register(r'frontend-posts', views.PostsViewSet, basename='frontend-post')
 
 
 # --- 5. URLPATTERNS (Updated) ---
@@ -124,6 +135,16 @@ urlpatterns = [
     path('test/', views.TestAPIView.as_view(), name='test_api'),
     # --- 6. USE OUR NEW CUSTOM REFRESH VIEW ---
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
+    
+    # --- SAFE & NEW RESET PASSWORD ROUTE ---
+    path('reset-password/', views.PasswordResetView.as_view(), name='reset-password'),
+    
+    path('role-permissions/<int:usertype_id>/', views.RolePermissionManagerView.as_view(), name='role-permission-list'),
+    path('role-permissions/save/', views.RolePermissionManagerView.as_view(), name='role-permission-save'),
+    
+    path('import-data/', views.ImportDataView.as_view(), name='import-data'),
+    path('backup/', views.BackupView.as_view(), name='backup'),
+    
     
     # --- NEW MESSAGE (REPLY/VIEW) ROUTE ---
     path(

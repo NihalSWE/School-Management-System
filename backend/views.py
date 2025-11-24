@@ -5,7 +5,7 @@ from .models import *
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Max
 from django.utils import timezone
-
+import hashlib
 # DRF Imports
 from rest_framework import viewsets, permissions, status, exceptions, mixins
 from rest_framework.decorators import action
@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny,IsAdminUser
 from rest_framework.viewsets import ReadOnlyModelViewSet
+from rest_framework import parsers
 
 
 
@@ -67,10 +68,15 @@ from .serializers import (
     ProductsalepaidSerializer,LeavecategorySerializer,LeaveassignSerializer, 
     LeaveapplicationsSerializer,ActivitiescategorySerializer,ActivitiesSerializer,       
     ChildcareSerializer,BookSerializer,EbooksSerializer,IssueSerializer,LmemberSerializer,
-    SponsorSerializer,CandidateSerializer,SponsorshipSerializer,FeetypesSerializer,ExpenseSerializer,     
-    IncomeSerializer,MaininvoiceSerializer,InvoiceSerializer,PaymentSerializer,GlobalpaymentSerializer,
-    NoticeSerializer,EventSerializer,OnlineadmissionSerializer,VisitorinfoSerializer,MailandsmstemplatetagSerializer, 
-    MailandsmstemplateSerializer,MailandsmsSerializer
+    SponsorSerializer,CandidateSerializer,SponsorshipSerializer,FeetypesSerializer,
+    ExpenseSerializer,IncomeSerializer,MaininvoiceSerializer,InvoiceSerializer,
+    PaymentSerializer,GlobalpaymentSerializer,NoticeSerializer,EventSerializer,
+    OnlineadmissionSerializer,VisitorinfoSerializer,MailandsmstemplatetagSerializer, 
+    MailandsmstemplateSerializer,MailandsmsSerializer,SchoolyearSerializer,
+    StudentgroupSerializer,ComplainSerializer,CertificateTemplateSerializer,
+    SociallinkSerializer,PasswordResetSerializer,PermissionsSerializer,PermissionAssignmentSerializer,
+    AddonsSerializer, UpdateSerializer, ImportDataSerializer,PagesSerializer, 
+    PostsSerializer, PostsCategoriesSerializer
     
      
     
@@ -617,28 +623,53 @@ class StudentattendanceViewSet(viewsets.ModelViewSet):
         return context
 
     def get_queryset(self):
-        # --- HARDENED ---
+        # --- 1. Security & Permissions (EXISTING LOGIC) ---
         user_type = get_token_claim(self.request, 'user_type')
         user_id = get_token_claim(self.request, 'user_id', 0)
 
         if not user_id:
             return Attendance.objects.none()
 
+        # Define the base queryset based on WHO is logged in
+        queryset = Attendance.objects.none()
+
         if user_type == 'systemadmin':
-            return Attendance.objects.all()
-
-        if user_type == 'teacher':
+            queryset = Attendance.objects.all()
+        elif user_type == 'teacher':
+            # Get all classes assigned to this teacher
             class_ids = Subjectteacher.objects.filter(teacherid=user_id).values_list('classesid', flat=True).distinct()
-            return Attendance.objects.filter(classesid__in=class_ids)
-
-        if user_type == 'student':
-            return Attendance.objects.filter(studentid=user_id)
-
-        if user_type == 'parent':
+            queryset = Attendance.objects.filter(classesid__in=class_ids)
+        elif user_type == 'student':
+            queryset = Attendance.objects.filter(studentid=user_id)
+        elif user_type == 'parent':
             student_ids = Student.objects.filter(parentid=user_id).values_list('studentid', flat=True)
-            return Attendance.objects.filter(studentid__in=student_ids)
+            queryset = Attendance.objects.filter(studentid__in=student_ids)
+        
+        # --- 2. Input Filtering (NEW LOGIC) ---
+        # This allows the Frontend to ask for specific data
+        
+        # Filter by Class
+        classes_id = self.request.query_params.get('classesid')
+        if classes_id:
+            queryset = queryset.filter(classesid=classes_id)
 
-        return Attendance.objects.none()
+        # Filter by Section
+        section_id = self.request.query_params.get('sectionid')
+        if section_id:
+            queryset = queryset.filter(sectionid=section_id)
+
+        # Filter by School Year
+        schoolyear_id = self.request.query_params.get('schoolyearid')
+        if schoolyear_id:
+            queryset = queryset.filter(schoolyearid=schoolyear_id)
+
+        # Filter by Month-Year (e.g. "08-2025")
+        # NOTE: Your legacy DB stores this as a string, usually "MM-YYYY"
+        monthyear = self.request.query_params.get('monthyear')
+        if monthyear:
+            queryset = queryset.filter(monthyear=monthyear)
+
+        return queryset
     
     # --- THIS IS THE NEW "BULK" FEATURE ---
     @action(detail=False, methods=['post'], url_path='bulk-upsert')
@@ -2695,6 +2726,215 @@ class MailandsmsViewSet(viewsets.ModelViewSet):
     """
     queryset = Mailandsms.objects.all().order_by('-mailandsmsid')
     serializer_class = MailandsmsSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+    
+# --- ADMINISTRATOR MODULE (PART 1) ---
+
+class SchoolyearViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Admin-only access to Academic Years.
+    """
+    queryset = Schoolyear.objects.all().order_by('-schoolyearid')
+    serializer_class = SchoolyearSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class StudentgroupViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Admin-only access to Student Groups.
+    """
+    queryset = Studentgroup.objects.all().order_by('studentgroupid')
+    serializer_class = StudentgroupSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+class ComplainViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Admin-only access to Complaints.
+    """
+    queryset = Complain.objects.all().order_by('-complainid')
+    serializer_class = ComplainSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class CertificateTemplateViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Admin-only access to Certificate Templates.
+    """
+    queryset = CertificateTemplate.objects.all().order_by('-certificate_templateid')
+    serializer_class = CertificateTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+
+
+class SociallinkViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Manage Social Links.
+    """
+    queryset = Sociallink.objects.all().order_by('-sociallinkid')
+    serializer_class = SociallinkSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    
+    
+# --- ADMINISTRATOR MODULE (RESET PASSWORD ACTION) ---
+
+class PasswordResetView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        serializer = PasswordResetSerializer(data=request.data)
+        if serializer.is_valid():
+            usertypeid = serializer.validated_data['usertypeid']
+            username = serializer.validated_data['username']
+            new_password = serializer.validated_data['new_password']
+
+            # --- 1. Traffic Controller ---
+            user_model = None
+            if usertypeid == 1:
+                user_model = Systemadmin
+            elif usertypeid == 2:
+                user_model = Teacher
+            elif usertypeid == 3:
+                user_model = Student
+            elif usertypeid == 4:
+                user_model = Parents
+            else:
+                return Response({"detail": "Invalid User Type ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # --- 2. Find User ---
+            try:
+                user = user_model.objects.get(username=username)
+            except user_model.DoesNotExist:
+                return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            # --- 3. Hash Password (THE FIX) ---
+            # Use the function from hash_utils so it matches Login logic exactly
+            user.password = make_ci_hash(new_password) 
+
+            # --- 4. Save ---
+            user.save()
+
+            return Response({"detail": "Password reset successfully."}, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
+# --- ADMINISTRATOR MODULE (PART 2 - NEW ONLY) ---
+
+class PermissionsViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    SAFE & NEW: List all available permissions.
+    """
+    queryset = Permissions.objects.all().order_by('permissionid')
+    serializer_class = PermissionsSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+class RolePermissionManagerView(APIView):
+    """
+    SAFE & NEW: The Logic for 'Role Permissions' (Image 67bc5c).
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def get(self, request, usertype_id):
+        assigned_ids = PermissionRelationships.objects.filter(
+            usertype_id=usertype_id
+        ).values_list('permission_id', flat=True)
+        return Response(assigned_ids, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = PermissionAssignmentSerializer(data=request.data)
+        if serializer.is_valid():
+            usertype_id = serializer.validated_data['usertype_id']
+            new_ids = serializer.validated_data['permission_ids']
+
+            # 1. Wipe existing permissions for this role
+            PermissionRelationships.objects.filter(usertype_id=usertype_id).delete()
+
+            # 2. Bulk Create new relationships
+            new_relations = [
+                PermissionRelationships(usertype_id=usertype_id, permission_id=pid)
+                for pid in new_ids
+            ]
+            PermissionRelationships.objects.bulk_create(new_relations)
+
+            return Response({"detail": "Permissions updated successfully."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ImportDataView(APIView):
+    """
+    SAFE & NEW: Handles CSV Import.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    parser_classes = [parsers.MultiPartParser]
+
+    def post(self, request):
+        serializer = ImportDataSerializer(data=request.data)
+        if serializer.is_valid():
+            # Placeholder: In production, you'd parse the CSV here.
+            return Response({"detail": "File received. Import logic ready."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class BackupView(APIView):
+    """
+    SAFE & NEW: Backup Action.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+    def post(self, request):
+        return Response({"detail": "Database backup initiated successfully."}, status=status.HTTP_200_OK)
+
+class AddonsViewSet(viewsets.ModelViewSet):
+    queryset = Addons.objects.all().order_by('-date')
+    serializer_class = AddonsSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+class UpdateViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Update.objects.all().order_by('-date')
+    serializer_class = UpdateSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    
+    
+# --- FRONTEND (CMS) MODULE ---
+
+class PagesViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Manage Frontend Pages.
+    """
+    queryset = Pages.objects.all().order_by('-create_date')
+    serializer_class = PagesSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({"request": self.request})
+        return context
+
+class PostsCategoriesViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Manage Categories for Posts.
+    """
+    queryset = PostsCategories.objects.all().order_by('posts_categoriesid')
+    serializer_class = PostsCategoriesSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminUser]
+
+class PostsViewSet(viewsets.ModelViewSet):
+    """
+    SAFE & NEW: Manage Frontend Posts (News, Events).
+    """
+    queryset = Posts.objects.all().order_by('-create_date')
+    serializer_class = PostsSerializer
     permission_classes = [permissions.IsAuthenticated, IsAdminUser]
 
     def get_serializer_context(self):

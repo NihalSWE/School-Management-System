@@ -343,11 +343,21 @@ class SystemadminSerializer(BaseUserSerializer):
             'create_userid': {'read_only': True},
             'create_username': {'read_only': True},
             'create_usertype': {'read_only': True},
-            'usertypeid': {'read_only': True}, # <-- "Flawless"
+            'usertypeid': {'read_only': True},
+            'active': {'default': 1},
+            'jod': {'required': False},
         }
 
     # --- "FLAWLESS" FIX ---
     def create(self, validated_data):
+        # --- 1. NEW LOGIC (Required for Admin Panel) ---
+        # Auto-set Join Date (JOD) if missing
+        if 'jod' not in validated_data:
+            validated_data['jod'] = timezone.now().date()
+        
+        # Auto-set Active Status
+        validated_data['active'] = 1
+        
         request = self.context.get('request')
         user_id = get_token_claim(request, 'user_id', 0)
         username = get_token_claim(request, 'username', 'unknown')
@@ -2128,6 +2138,247 @@ class VisitorinfoSerializer(serializers.ModelSerializer):
         # "Flawless" (and 100% *correct*) - set schoolyearid default
         validated_data['schoolyearid'] = validated_data.get('schoolyearid', 1) 
         
+        return super().create(validated_data)
+
+
+# --- ADMINISTRATOR MODULE (PART 1) ---
+
+class SchoolyearSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage Academic Years.
+    """
+    class Meta:
+        model = Schoolyear
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_username': {'read_only': True},
+            'create_usertype': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        # Smart Create: Capture Admin details
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        username = get_token_claim(request, 'username', 'admin')
+        
+        validated_data['create_userid'] = user_id
+        validated_data['create_username'] = username
+        validated_data['create_usertype'] = 'systemadmin' # Always created by admin
+        
+        now = timezone.now()
+        validated_data['create_date'] = now
+        validated_data['modify_date'] = now
+        
+        return super().create(validated_data)
+
+class StudentgroupSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage Student Groups (Science, Arts, etc.)
+    """
+    class Meta:
+        model = Studentgroup
+        fields = '__all__'
+
+class ComplainSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage Complaints.
+    """
+    class Meta:
+        model = Complain
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_usertypeid': {'read_only': True},
+        }
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        # 1=Admin. If other roles use this, we might need dynamic logic, 
+        # but for this module, it is Admin creating/managing.
+        usertype_id = 1 
+        
+        validated_data['create_userid'] = user_id
+        validated_data['create_usertypeid'] = usertype_id
+        
+        now = timezone.now()
+        validated_data['create_date'] = now
+        validated_data['modify_date'] = now
+        
+        return super().create(validated_data)
+
+class CertificateTemplateSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage Certificate Templates.
+    """
+    class Meta:
+        model = CertificateTemplate
+        fields = '__all__'
+
+
+class SociallinkSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage Social Links.
+    """
+    class Meta:
+        model = Sociallink
+        fields = '__all__'
+
+
+#------------password reset------------
+class PasswordResetSerializer(serializers.Serializer):
+    """
+    SAFE & NEW: Validates input for the Reset Password Action.
+    Not tied to any specific model.
+    """
+    usertypeid = serializers.IntegerField(required=True)
+    username = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=4)
+        
+
+# --- ADMINISTRATOR MODULE (PART 2 ) ---
+
+class PermissionsSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Read-only list of available system permissions.
+    """
+    class Meta:
+        model = Permissions
+        fields = '__all__'
+
+class PermissionAssignmentSerializer(serializers.Serializer):
+    """
+    SAFE & NEW: Validates the 'Save Permissions' action.
+    """
+    usertype_id = serializers.IntegerField()
+    permission_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        allow_empty=True
+    )
+
+class AddonsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Addons
+        fields = '__all__'
+
+class UpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Update
+        fields = '__all__'
+
+class ImportDataSerializer(serializers.Serializer):
+    """
+    SAFE & NEW: Validates CSV upload for Import.
+    """
+    table_name = serializers.CharField(required=True) 
+    file = serializers.FileField(required=True)        
+
+
+# --- FRONTEND (CMS) MODULE ---
+
+class PagesSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage CMS Pages.
+    FIXED: 'parentid' and 'pageorder' are now optional in the request.
+    """
+    class Meta:
+        model = Pages
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_username': {'read_only': True},
+            'create_usertypeid': {'read_only': True},
+            
+            # --- THE FIX IS HERE ---
+            'parentid': {'required': False},
+            'pageorder': {'required': False},
+            'status': {'required': False},
+            'visibility': {'required': False},
+        }
+
+    def create(self, validated_data):
+        # 1. Capture Audit Details
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        username = get_token_claim(request, 'username', 'admin')
+        usertype_id = 1 
+
+        validated_data['create_userid'] = user_id
+        validated_data['create_username'] = username
+        validated_data['create_usertypeid'] = usertype_id
+        
+        now = timezone.now()
+        validated_data['create_date'] = now
+        validated_data['modify_date'] = now
+        
+        # 2. Set Defaults (Now validation lets us reach here!)
+        if 'status' not in validated_data: validated_data['status'] = 1 
+        if 'visibility' not in validated_data: validated_data['visibility'] = 1 
+        if 'pageorder' not in validated_data: validated_data['pageorder'] = 0
+        if 'parentid' not in validated_data: validated_data['parentid'] = 0
+
+        return super().create(validated_data)
+
+
+class PostsCategoriesSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage Blog/News Categories.
+    """
+    class Meta:
+        model = PostsCategories
+        fields = '__all__'
+
+
+class PostsSerializer(serializers.ModelSerializer):
+    """
+    SAFE & NEW: Manage Posts.
+    FIXED: 'parentid' and 'postorder' are now optional (handled in create).
+    """
+    class Meta:
+        model = Posts
+        fields = '__all__'
+        extra_kwargs = {
+            'create_date': {'read_only': True},
+            'modify_date': {'read_only': True},
+            'create_userid': {'read_only': True},
+            'create_username': {'read_only': True},
+            'create_usertypeid': {'read_only': True},
+            
+            # --- THE FIX IS HERE ---
+            'parentid': {'required': False},   # Fixes the error
+            'postorder': {'required': False},  # Fixes the error
+            'status': {'required': False},
+            'visibility': {'required': False},
+        }
+
+    def create(self, validated_data):
+        # 1. Capture Audit Details
+        request = self.context.get('request')
+        user_id = get_token_claim(request, 'user_id', 0)
+        username = get_token_claim(request, 'username', 'admin')
+        usertype_id = 1 
+
+        validated_data['create_userid'] = user_id
+        validated_data['create_username'] = username
+        validated_data['create_usertypeid'] = usertype_id
+        
+        now = timezone.now()
+        validated_data['create_date'] = now
+        validated_data['modify_date'] = now
+        
+        # 2. Set Defaults (The serializer now lets us reach this code!)
+        if 'status' not in validated_data: validated_data['status'] = 1
+        if 'visibility' not in validated_data: validated_data['visibility'] = 1
+        if 'postorder' not in validated_data: validated_data['postorder'] = 0
+        if 'parentid' not in validated_data: validated_data['parentid'] = 0
+
         return super().create(validated_data)
 
         
